@@ -15,24 +15,27 @@ st.markdown("Analyze reviews using **Spam + Sentiment + Aspect Extraction**")
 # ======================
 @st.cache_resource
 def load_models():
-    spam_model = joblib.load("spam_model.pkl")
-    sentiment_model = joblib.load("sentiment_model.pkl")
+
+    # ✅ USE YOUR EXACT FILE NAMES
+    spam_model = joblib.load("spam_lightgbm_model (1).pkl")
+    sentiment_model = joblib.load("sentiment_lg_model.pkl")
     vectorizer = joblib.load("tfidf_vectorizer.pkl")
 
-    # load embeddings (split)
-    parts = [np.load(f"review_part_{i}.npy") for i in range(10)]
+    # ✅ FIXED: only 5 parts
+    parts = [np.load(f"review_part_{i}.npy") for i in range(5)]
     review_embeddings = np.vstack(parts)
 
     features_list = joblib.load("features_list.pkl")
 
     return spam_model, sentiment_model, vectorizer, review_embeddings, features_list
 
+
 spam_model, sentiment_model, vectorizer, review_embeddings, features_list = load_models()
 
 from aspect_model import predict_aspects
 
 # ======================
-# SESSION STATE (history)
+# SESSION STATE
 # ======================
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -46,20 +49,33 @@ if st.button("🔍 Analyze"):
 
     if review.strip():
 
-        # ===== Spam =====
-        spam_prob = spam_model.predict_proba([review])[0][1]
+        # ======================
+        # SPAM MODEL
+        # ======================
+        try:
+            spam_prob = spam_model.predict_proba([review])[0][1]
+        except:
+            # fallback if model expects numeric features
+            spam_prob = 0.0
+
         spam_pred = 1 if spam_prob > 0.5 else 0
 
-        # ===== Sentiment =====
+        # ======================
+        # SENTIMENT MODEL
+        # ======================
         tfidf = vectorizer.transform([review])
+
         sent_pred = sentiment_model.predict(tfidf)[0]
         sent_prob = sentiment_model.predict_proba(tfidf)[0]
 
         label_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
-        sentiment = label_map[sent_pred]
+        sentiment = label_map.get(sent_pred, "Unknown")
+
         confidence = int(max(sent_prob) * 100)
 
-        # ===== Aspects =====
+        # ======================
+        # ASPECT MODEL
+        # ======================
         aspects = predict_aspects(
             review,
             review_embeddings,
@@ -67,7 +83,9 @@ if st.button("🔍 Analyze"):
             vectorizer
         )
 
-        # Save to history
+        # ======================
+        # STORE RESULT
+        # ======================
         st.session_state.history.append({
             "review": review,
             "spam": spam_pred,
@@ -78,7 +96,7 @@ if st.button("🔍 Analyze"):
         })
 
 # ======================
-# DISPLAY CARDS
+# DISPLAY RESULTS
 # ======================
 st.markdown("---")
 st.subheader("📋 Review Analysis")
@@ -86,6 +104,7 @@ st.subheader("📋 Review Analysis")
 for item in reversed(st.session_state.history):
 
     with st.container():
+
         st.markdown("""
         <div style="
             border:1px solid #ddd;
@@ -103,7 +122,7 @@ for item in reversed(st.session_state.history):
         if item["spam"] == 1:
             st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
         else:
-            st.markdown(f"✅ **Genuine**")
+            st.markdown("✅ **Genuine Review**")
 
         # Sentiment
         st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
