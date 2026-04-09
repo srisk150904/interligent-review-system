@@ -1,0 +1,8 @@
+streamlit
+numpy
+joblib
+scikit-learn
+tensorflow
+tensorflow-hub
+spacy
+sentence-transformers
