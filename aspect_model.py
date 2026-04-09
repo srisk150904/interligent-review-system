@@ -3,10 +3,15 @@ import re
 import numpy as np
 import spacy
 from sklearn.metrics.pairwise import cosine_similarity
-import tensorflow_hub as hub
 
-nlp = spacy.load("en_core_web_sm")
-embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
+import spacy
+
+try:
+    nlp = spacy.load("en_core_web_sm")
+except:
+    import os
+    os.system("python -m spacy download en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
 
 def extract_noun_aspects(text):
     doc = nlp(text)
@@ -60,16 +65,17 @@ def normalize_aspects(features):
     }
     return [mapping.get(f, f) for f in features]
 
-def predict_aspects(review, review_embeddings, features_list, top_k=5):
+def predict_aspects(review, review_embeddings, features_list, vectorizer, top_k=5):
 
     if not review or len(review.split()) < 3:
         return []
 
     input_aspects = extract_noun_aspects(review)
 
-    emb = embed([review]).numpy()
-    sims = cosine_similarity(emb, review_embeddings)[0]
+    # TF-IDF embedding
+    emb = vectorizer.transform([review]).toarray()
 
+    sims = cosine_similarity(emb, review_embeddings)[0]
     top_indices = np.argsort(sims)[-top_k:]
 
     collected = []
