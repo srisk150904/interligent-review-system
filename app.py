@@ -14,11 +14,10 @@ st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
 
 # ======================
 
-# LOAD MODELS
+# LOAD MODELS (NO CACHE)
 
 # ======================
 
-@st.cache_resource
 def load_models():
 spam_model = joblib.load("spam_lightgbm_model.pkl")
 sentiment_model = joblib.load("sentiment_lg_model.pkl")
@@ -55,9 +54,10 @@ if not review.strip():
     st.warning("Please enter a review.")
 else:
     try:
-        spam_model, sentiment_model, vectorizer = load_models()
+        with st.spinner("🔄 Loading models..."):
+            spam_model, sentiment_model, vectorizer = load_models()
     except Exception as e:
-        st.error(f"Model loading failed: {e}")
+        st.error(f"❌ Model loading failed: {e}")
         st.stop()
 
     # ======================
@@ -130,6 +130,7 @@ with st.container():
 
     st.markdown("</div>", unsafe_allow_html=True)
 ```
+
 
 
 
