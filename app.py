@@ -60,7 +60,12 @@ if st.button("🔍 Analyze"):
         confidence = int(max(sent_prob) * 100)
 
         # ===== Aspects =====
-        aspects = predict_aspects(review, review_embeddings, features_list)
+        aspects = predict_aspects(
+            review,
+            review_embeddings,
+            features_list,
+            vectorizer
+        )
 
         # Save to history
         st.session_state.history.append({
