@@ -22,8 +22,8 @@ def load_models():
     vectorizer = joblib.load("tfidf_vectorizer.pkl")
 
     # ✅ FIXED: only 5 parts
-    parts = [np.load(f"review_part_{i}.npy") for i in range(10)]
-    review_embeddings = np.vstack(parts)
+    parts = [np.load(f"review_part_{i}.npy", mmap_mode='r') for i in range(10)]
+    review_embeddings = np.concatenate(parts, axis=0)
 
     features_list = joblib.load("features_list.pkl")
 
