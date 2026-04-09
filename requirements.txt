@@ -2,7 +2,4 @@ streamlit==1.33.0
 numpy
 joblib
 scikit-learn
-tensorflow-cpu
-tensorflow-hub
 spacy==3.7.2
-sentence-transformers
