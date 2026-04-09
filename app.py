@@ -13,7 +13,7 @@ st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
 # LOAD MODELS (NO CACHE)
 # ======================
 def load_models():
-    spam_model = joblib.load("spam_lightgbm_model.pkl")
+    #spam_model = joblib.load("spam_lightgbm_model.pkl")
     sentiment_model = joblib.load("sentiment_lg_model.pkl")
     vectorizer = joblib.load("tfidf_vectorizer.pkl")
     return spam_model, sentiment_model, vectorizer
