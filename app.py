@@ -1,5 +1,7 @@
 import streamlit as st
 import joblib
+import numpy as np
+import re
 
 # ======================
 # PAGE CONFIG
@@ -14,15 +16,41 @@ st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
 # ======================
 @st.cache_resource
 def load_models():
-
     spam_model = joblib.load("spam_lightgbm_model.pkl")
     sentiment_model = joblib.load("sentiment_lg_model.pkl")
     vectorizer = joblib.load("tfidf_vectorizer.pkl")
-
     return spam_model, sentiment_model, vectorizer
 
-
 spam_model, sentiment_model, vectorizer = load_models()
+
+# ======================
+# FEATURE ENGINEERING (IMPORTANT FIX)
+# ======================
+def extract_features(text):
+    word_count = len(text.split())
+    exclamations = text.count("!")
+
+    letters = [c for c in text if c.isalpha()]
+    uppercase_ratio = (
+        sum(1 for c in letters if c.isupper()) / len(letters)
+        if letters else 0
+    )
+
+    emoji_count = len(re.findall(r'[😍🔥😱😂😡]', text))
+
+    return np.array([[word_count, exclamations, uppercase_ratio, emoji_count]])
+
+# ======================
+# RULE-BASED BOOST (HYBRID AI)
+# ======================
+def rule_based_spam(text):
+    if text.count("!") > 3:
+        return True
+    if sum(1 for c in text if c.isupper()) / max(len(text), 1) > 0.4:
+        return True
+    if len(re.findall(r'[😍🔥😱😂😡]', text)) > 2:
+        return True
+    return False
 
 # ======================
 # SESSION STATE
@@ -40,14 +68,16 @@ if st.button("🔍 Analyze"):
     if review.strip():
 
         # ======================
-        # SPAM MODEL
+        # SPAM MODEL (FIXED)
         # ======================
         try:
-            spam_prob = spam_model.predict_proba([review])[0][1]
+            features = extract_features(review)
+            spam_prob = float(spam_model.predict_proba(features)[0][1])
         except:
             spam_prob = 0.0
 
-        spam_pred = 1 if spam_prob > 0.5 else 0
+        # Hybrid decision
+        is_spam = (spam_prob > 0.3) or rule_based_spam(review)
 
         # ======================
         # SENTIMENT MODEL
@@ -67,7 +97,7 @@ if st.button("🔍 Analyze"):
         # ======================
         st.session_state.history.append({
             "review": review,
-            "spam": spam_pred,
+            "spam": is_spam,
             "spam_prob": spam_prob,
             "sentiment": sentiment,
             "confidence": confidence
@@ -97,8 +127,8 @@ for item in reversed(st.session_state.history):
         st.markdown(f"**📝 Review:** {item['review']}")
 
         # Spam
-        if item["spam"] == 1:
-            st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
+        if item["spam"]:
+            st.markdown(f"🚨 **Spam Detected** ({item['spam_prob']:.2f})")
         else:
             st.markdown("✅ **Genuine Review**")
 
@@ -106,6 +136,121 @@ for item in reversed(st.session_state.history):
         st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+
+
+
+
+
+# import streamlit as st
+# import joblib
+
+# # ======================
+# # PAGE CONFIG
+# # ======================
+# st.set_page_config(page_title="AI Review Analyzer", layout="wide")
+
+# st.title("🧠 AI Review Intelligence System")
+# st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
+
+# # ======================
+# # LOAD MODELS
+# # ======================
+# @st.cache_resource
+# def load_models():
+
+#     spam_model = joblib.load("spam_lightgbm_model.pkl")
+#     sentiment_model = joblib.load("sentiment_lg_model.pkl")
+#     vectorizer = joblib.load("tfidf_vectorizer.pkl")
+
+#     return spam_model, sentiment_model, vectorizer
+
+
+# spam_model, sentiment_model, vectorizer = load_models()
+
+# # ======================
+# # SESSION STATE
+# # ======================
+# if "history" not in st.session_state:
+#     st.session_state.history = []
+
+# # ======================
+# # INPUT
+# # ======================
+# review = st.text_area("✍️ Enter a review:")
+
+# if st.button("🔍 Analyze"):
+
+#     if review.strip():
+
+#         # ======================
+#         # SPAM MODEL
+#         # ======================
+#         try:
+#             spam_prob = spam_model.predict_proba([review])[0][1]
+#         except:
+#             spam_prob = 0.0
+
+#         spam_pred = 1 if spam_prob > 0.5 else 0
+
+#         # ======================
+#         # SENTIMENT MODEL
+#         # ======================
+#         tfidf = vectorizer.transform([review])
+
+#         sent_pred = sentiment_model.predict(tfidf)[0]
+#         sent_prob = sentiment_model.predict_proba(tfidf)[0]
+
+#         label_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
+#         sentiment = label_map.get(sent_pred, "Unknown")
+
+#         confidence = int(max(sent_prob) * 100)
+
+#         # ======================
+#         # STORE RESULT
+#         # ======================
+#         st.session_state.history.append({
+#             "review": review,
+#             "spam": spam_pred,
+#             "spam_prob": spam_prob,
+#             "sentiment": sentiment,
+#             "confidence": confidence
+#         })
+
+# # ======================
+# # DISPLAY RESULTS
+# # ======================
+# st.markdown("---")
+# st.subheader("📋 Review Analysis")
+
+# for item in reversed(st.session_state.history):
+
+#     with st.container():
+
+#         st.markdown("""
+#         <div style="
+#             border:1px solid #ddd;
+#             padding:15px;
+#             border-radius:10px;
+#             margin-bottom:10px;
+#             background-color:#fafafa;
+#         ">
+#         """, unsafe_allow_html=True)
+
+#         # Review
+#         st.markdown(f"**📝 Review:** {item['review']}")
+
+#         # Spam
+#         if item["spam"] == 1:
+#             st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
+#         else:
+#             st.markdown("✅ **Genuine Review**")
+
+#         # Sentiment
+#         st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
+
+#         st.markdown("</div>", unsafe_allow_html=True)
 
 
 
