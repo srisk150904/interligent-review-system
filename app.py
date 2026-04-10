@@ -57,6 +57,30 @@ def sentiment_emoji_and_label(pred_class, percent):
             return "😕", "Slightly Negative"
 
 # ======================
+# RATING vs SENTIMENT CHECK (NEW)
+# ======================
+def check_rating_sentiment_mismatch(rating, pred_class):
+
+    # Expected sentiment from rating
+    if rating <= 2:
+        expected = -1
+    elif rating == 3:
+        expected = 0
+    else:
+        expected = 1
+
+    # Match
+    if expected == pred_class:
+        return "match", "✅ Rating and review are consistent"
+
+    # Slight mismatch
+    if abs(expected - pred_class) == 1:
+        return "slight", "⚠️ Slight mismatch between rating and review"
+
+    # Strong mismatch
+    return "strong", "🚨 Strong mismatch: rating contradicts review"
+
+# ======================
 # SPAM FEATURE ENGINEERING
 # ======================
 def build_spam_features(review, rating=4):
@@ -68,11 +92,11 @@ def build_spam_features(review, rating=4):
 
     features = np.array([[
         rating,
-        1.0,                     # num_reviews_by_user
-        rating,                  # avg_rating_by_user
-        0.0,                     # rating_std_by_user
-        len(text),               # review_length_avg_user
-        1.0,                     # reviews_per_day_user
+        1.0,
+        rating,
+        0.0,
+        len(text),
+        1.0,
         tfidf_nonzero_ratio
     ]])
 
@@ -106,7 +130,7 @@ if st.button("🔍 Analyze"):
         spam_pred = 1 if spam_prob > 0.2 else 0
 
         # ======================
-        # SENTIMENT MODEL (CORRECT + ENHANCED)
+        # SENTIMENT MODEL
         # ======================
         tfidf = vectorizer.transform([review.lower()])
 
@@ -119,6 +143,14 @@ if st.button("🔍 Analyze"):
         emoji, intensity_label = sentiment_emoji_and_label(sent_pred, percent)
 
         # ======================
+        # RATING vs SENTIMENT
+        # ======================
+        mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
+            rating,
+            sent_pred
+        )
+
+        # ======================
         # STORE RESULT
         # ======================
         st.session_state.history.append({
@@ -128,7 +160,9 @@ if st.button("🔍 Analyze"):
             "emoji": emoji,
             "intensity": intensity_label,
             "percent": percent,
-            "probs": sent_prob
+            "probs": sent_prob,
+            "mismatch_type": mismatch_type,
+            "mismatch_msg": mismatch_msg
         })
 
 # ======================
@@ -149,8 +183,16 @@ for item in reversed(st.session_state.history):
         else:
             st.success("✅ Genuine Review")
 
-        # Sentiment main
+        # Sentiment
         st.markdown(f"## {item['emoji']} {item['intensity']} ({item['percent']}%)")
+
+        # Rating vs Sentiment
+        if item["mismatch_type"] == "match":
+            st.success(item["mismatch_msg"])
+        elif item["mismatch_type"] == "slight":
+            st.warning(item["mismatch_msg"])
+        else:
+            st.error(item["mismatch_msg"])
 
         # Breakdown
         with st.expander("📊 Sentiment Breakdown"):
