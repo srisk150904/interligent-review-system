@@ -3,6 +3,7 @@ import joblib
 import numpy as np
 import re
 import os
+from typing import List
 
 # ─── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -188,9 +189,30 @@ def load_models():
 
     # Spam (LightGBM + feature list)
     spam_model    = joblib.load(os.path.join(base, "spam_lightgbm_model.pkl"))
-    features_list = joblib.load(os.path.join(base, "features_list.pkl"))
+    features_path = os.path.join(base, "features_list.pkl")
+    features_list = load_feature_list(features_path, spam_model)
 
     return sent_model, tfidf, spam_model, features_list
+
+
+def load_feature_list(features_path: str, spam_model) -> List[str]:
+    """
+    Load feature names robustly.
+    If features_list.pkl is missing/corrupted, fall back to model feature names.
+    """
+    try:
+        if os.path.exists(features_path):
+            loaded = joblib.load(features_path)
+            if isinstance(loaded, (list, tuple)) and len(loaded) > 0:
+                return list(loaded)
+    except Exception:
+        pass
+
+    if hasattr(spam_model, "feature_name_") and len(spam_model.feature_name_) > 0:
+        return list(spam_model.feature_name_)
+
+    n_features = int(getattr(spam_model, "n_features_in_", 0))
+    return [f"f_{i}" for i in range(n_features)]
 
 
 # ─── Feature engineering helpers (mirror your training pipeline) ───────────────
@@ -211,7 +233,16 @@ def count_emojis(text: str) -> int:
     )
     return len(emoji_pattern.findall(text))
 
-def extract_spam_features(review: str, rating: float, features_list: list) -> np.ndarray:
+def extract_spam_features(
+    review: str,
+    rating: float,
+    features_list: list,
+    num_reviews_by_user: float,
+    avg_rating_by_user: float,
+    rating_std_by_user: float,
+    review_length_avg_user: float,
+    reviews_per_day_user: float,
+) -> np.ndarray:
     """
     Build the feature vector the spam model expects.
     We use sensible defaults for user-aggregated features since we have one review.
@@ -227,17 +258,19 @@ def extract_spam_features(review: str, rating: float, features_list: list) -> np
     # Build a dict with every feature the model was trained on
     feat_map = {
         "Rating":                 rating,
-        "num_reviews_by_user":    1.0,          # single review → default 1
-        "avg_rating_by_user":     rating,
-        "rating_std_by_user":     0.0,
-        "review_length_avg_user": review_len,
-        "reviews_per_day_user":   1.0,
+        "num_reviews_by_user":    num_reviews_by_user,
+        "avg_rating_by_user":     avg_rating_by_user,
+        "rating_std_by_user":     rating_std_by_user,
+        "review_length_avg_user": review_length_avg_user,
+        "reviews_per_day_user":   reviews_per_day_user,
         "tfidf_nonzero_ratio":    min(word_count / 100.0, 1.0),
         "exclamation_count":      excl,
         "uppercase_ratio":        upper,
         "emoji_count":            emoji,
     }
 
+    # If the model contains bert_pca_* features, we keep them as 0.0 at inference.
+    # This keeps compatibility with a hybrid-trained model when only raw text is provided.
     row = [feat_map.get(f, 0.0) for f in features_list]
     return np.array(row, dtype=np.float32).reshape(1, -1)
 
@@ -268,6 +301,22 @@ review_text = st.text_area(
 )
 
 rating = st.slider("Rating given by user", min_value=1, max_value=5, value=4, step=1)
+spam_threshold = st.slider(
+    "Spam decision threshold",
+    min_value=0.05,
+    max_value=0.95,
+    value=0.184,
+    step=0.01,
+    help="Lower = higher recall (catch more spam), Higher = higher precision (fewer false positives).",
+)
+
+with st.expander("Optional user behavior inputs (improves spam score quality)"):
+    st.caption("If unknown, keep defaults. These features are used by your spam model.")
+    num_reviews_by_user = st.number_input("num_reviews_by_user", min_value=1.0, value=1.0, step=1.0)
+    avg_rating_by_user = st.slider("avg_rating_by_user", min_value=1.0, max_value=5.0, value=float(rating), step=0.1)
+    rating_std_by_user = st.number_input("rating_std_by_user", min_value=0.0, value=0.0, step=0.1)
+    review_length_avg_user = st.number_input("review_length_avg_user", min_value=1.0, value=80.0, step=1.0)
+    reviews_per_day_user = st.number_input("reviews_per_day_user", min_value=0.0, value=1.0, step=0.1)
 
 run = st.button("Analyze Review →")
 
@@ -291,10 +340,18 @@ if run:
         intensity = get_sentiment_intensity(sent_conf)
 
         # ── Spam ───────────────────────────────────────────────────────────────
-        spam_feats = extract_spam_features(review_text, rating, features_list)
+        spam_feats = extract_spam_features(
+            review=review_text,
+            rating=rating,
+            features_list=features_list,
+            num_reviews_by_user=num_reviews_by_user,
+            avg_rating_by_user=avg_rating_by_user,
+            rating_std_by_user=rating_std_by_user,
+            review_length_avg_user=review_length_avg_user,
+            reviews_per_day_user=reviews_per_day_user,
+        )
         spam_prob  = float(spam_model.predict_proba(spam_feats)[0][1])
-        SPAM_THRESHOLD = 0.184
-        is_spam    = spam_prob >= SPAM_THRESHOLD
+        is_spam    = spam_prob >= spam_threshold
 
         # ── Render ─────────────────────────────────────────────────────────────
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -305,7 +362,7 @@ if run:
             spam_card  = "card-spam" if is_spam else "card-legit"
             spam_label = "Spam Review" if is_spam else "Genuine Review"
             spam_emoji = "🚨" if is_spam else "✅"
-            spam_sub   = f"Spam probability: {spam_prob:.0%}"
+            spam_sub   = f"Spam probability: {spam_prob:.0%} (threshold {spam_threshold:.2f})"
             bar_color  = "#ff4545" if is_spam else "#38d96a"
             st.markdown(f"""
             <div class="result-card {spam_card}">
