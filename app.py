@@ -3,6 +3,7 @@ import joblib
 import numpy as np
 import re
 import os
+from typing import List
 
 # ─── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -28,141 +29,7 @@ html, body, [class*="css"] {
 }
 
 /* ── Header ── */
-.hero-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 2.6rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    line-height: 1.1;
-    background: linear-gradient(135deg, #f5e6c8 0%, #e8b86d 50%, #c97b3a 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 0.2rem;
-}
-.hero-sub {
-    font-size: 0.95rem;
-    font-weight: 300;
-    color: #7a7468;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    margin-bottom: 2.5rem;
-}
-
-/* ── Textarea ── */
-.stTextArea > div > div > textarea {
-    background: #12121a !important;
-    border: 1px solid #2a2830 !important;
-    border-radius: 12px !important;
-    color: #e8e4dc !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 1rem !important;
-    padding: 16px !important;
-    caret-color: #e8b86d;
-    transition: border-color 0.2s;
-}
-.stTextArea > div > div > textarea:focus {
-    border-color: #e8b86d !important;
-    box-shadow: 0 0 0 2px rgba(232,184,109,0.15) !important;
-}
-
-/* ── Button ── */
-.stButton > button {
-    background: linear-gradient(135deg, #e8b86d, #c97b3a) !important;
-    color: #0a0a0f !important;
-    font-family: 'Syne', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 0.95rem !important;
-    letter-spacing: 0.04em !important;
-    border: none !important;
-    border-radius: 10px !important;
-    padding: 0.6rem 2.4rem !important;
-    cursor: pointer !important;
-    transition: opacity 0.2s, transform 0.15s !important;
-}
-.stButton > button:hover {
-    opacity: 0.88 !important;
-    transform: translateY(-1px) !important;
-}
-
-/* ── Result cards ── */
-.result-card {
-    background: #12121a;
-    border: 1px solid #2a2830;
-    border-radius: 14px;
-    padding: 1.4rem 1.6rem;
-    margin-bottom: 1rem;
-    position: relative;
-    overflow: hidden;
-}
-.result-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-}
-.card-spam::before   { background: linear-gradient(90deg, #ff4545, #ff8c42); }
-.card-legit::before  { background: linear-gradient(90deg, #38d96a, #00c9a7); }
-.card-pos::before    { background: linear-gradient(90deg, #38d96a, #00c9a7); }
-.card-neg::before    { background: linear-gradient(90deg, #ff4545, #e84393); }
-.card-neu::before    { background: linear-gradient(90deg, #e8b86d, #c97b3a); }
-
-.card-label {
-    font-family: 'Syne', sans-serif;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #7a7468;
-    margin-bottom: 0.4rem;
-}
-.card-verdict {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.7rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    line-height: 1;
-    margin-bottom: 0.5rem;
-}
-.card-sub {
-    font-size: 0.88rem;
-    color: #7a7468;
-    font-weight: 300;
-}
-
-/* ── Confidence bar ── */
-.conf-wrap { margin-top: 0.8rem; }
-.conf-label {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.78rem;
-    color: #7a7468;
-    margin-bottom: 0.3rem;
-}
-.conf-bar-bg {
-    background: #1e1e28;
-    border-radius: 99px;
-    height: 6px;
-    overflow: hidden;
-}
-.conf-bar-fill {
-    height: 100%;
-    border-radius: 99px;
-    transition: width 0.6s ease;
-}
-
-/* ── Divider ── */
-.divider {
-    border: none;
-    border-top: 1px solid #1e1e28;
-    margin: 1.8rem 0;
-}
-
-/* ── Tip box ── */
-.tip-box {
-    background: #12121a;
-    border: 1px solid #2a2830;
-    border-left: 3px solid #e8b86d;
+@@ -166,168 +167,224 @@ html, body, [class*="css"] {
     border-radius: 8px;
     padding: 0.9rem 1.2rem;
     font-size: 0.85rem;
@@ -189,8 +56,30 @@ def load_models():
     # Spam (LightGBM + feature list)
     spam_model    = joblib.load(os.path.join(base, "spam_lightgbm_model.pkl"))
     features_list = joblib.load(os.path.join(base, "features_list.pkl"))
+    features_path = os.path.join(base, "features_list.pkl")
+    features_list = load_feature_list(features_path, spam_model)
 
     return sent_model, tfidf, spam_model, features_list
+
+
+def load_feature_list(features_path: str, spam_model) -> List[str]:
+    """
+    Load feature names robustly.
+    If features_list.pkl is missing/corrupted, fall back to model feature names.
+    """
+    try:
+        if os.path.exists(features_path):
+            loaded = joblib.load(features_path)
+            if isinstance(loaded, (list, tuple)) and len(loaded) > 0:
+                return list(loaded)
+    except Exception:
+        pass
+
+    if hasattr(spam_model, "feature_name_") and len(spam_model.feature_name_) > 0:
+        return list(spam_model.feature_name_)
+
+    n_features = int(getattr(spam_model, "n_features_in_", 0))
+    return [f"f_{i}" for i in range(n_features)]
 
 
 # ─── Feature engineering helpers (mirror your training pipeline) ───────────────
@@ -212,6 +101,16 @@ def count_emojis(text: str) -> int:
     return len(emoji_pattern.findall(text))
 
 def extract_spam_features(review: str, rating: float, features_list: list) -> np.ndarray:
+def extract_spam_features(
+    review: str,
+    rating: float,
+    features_list: list,
+    num_reviews_by_user: float,
+    avg_rating_by_user: float,
+    rating_std_by_user: float,
+    review_length_avg_user: float,
+    reviews_per_day_user: float,
+) -> np.ndarray:
     """
     Build the feature vector the spam model expects.
     We use sensible defaults for user-aggregated features since we have one review.
@@ -232,12 +131,19 @@ def extract_spam_features(review: str, rating: float, features_list: list) -> np
         "rating_std_by_user":     0.0,
         "review_length_avg_user": review_len,
         "reviews_per_day_user":   1.0,
+        "num_reviews_by_user":    num_reviews_by_user,
+        "avg_rating_by_user":     avg_rating_by_user,
+        "rating_std_by_user":     rating_std_by_user,
+        "review_length_avg_user": review_length_avg_user,
+        "reviews_per_day_user":   reviews_per_day_user,
         "tfidf_nonzero_ratio":    min(word_count / 100.0, 1.0),
         "exclamation_count":      excl,
         "uppercase_ratio":        upper,
         "emoji_count":            emoji,
     }
 
+    # If the model contains bert_pca_* features, we keep them as 0.0 at inference.
+    # This keeps compatibility with a hybrid-trained model when only raw text is provided.
     row = [feat_map.get(f, 0.0) for f in features_list]
     return np.array(row, dtype=np.float32).reshape(1, -1)
 
@@ -268,6 +174,22 @@ review_text = st.text_area(
 )
 
 rating = st.slider("Rating given by user", min_value=1, max_value=5, value=4, step=1)
+spam_threshold = st.slider(
+    "Spam decision threshold",
+    min_value=0.05,
+    max_value=0.95,
+    value=0.184,
+    step=0.01,
+    help="Lower = higher recall (catch more spam), Higher = higher precision (fewer false positives).",
+)
+
+with st.expander("Optional user behavior inputs (improves spam score quality)"):
+    st.caption("If unknown, keep defaults. These features are used by your spam model.")
+    num_reviews_by_user = st.number_input("num_reviews_by_user", min_value=1.0, value=1.0, step=1.0)
+    avg_rating_by_user = st.slider("avg_rating_by_user", min_value=1.0, max_value=5.0, value=float(rating), step=0.1)
+    rating_std_by_user = st.number_input("rating_std_by_user", min_value=0.0, value=0.0, step=0.1)
+    review_length_avg_user = st.number_input("review_length_avg_user", min_value=1.0, value=80.0, step=1.0)
+    reviews_per_day_user = st.number_input("reviews_per_day_user", min_value=0.0, value=1.0, step=0.1)
 
 run = st.button("Analyze Review →")
 
@@ -292,9 +214,20 @@ if run:
 
         # ── Spam ───────────────────────────────────────────────────────────────
         spam_feats = extract_spam_features(review_text, rating, features_list)
+        spam_feats = extract_spam_features(
+            review=review_text,
+            rating=rating,
+            features_list=features_list,
+            num_reviews_by_user=num_reviews_by_user,
+            avg_rating_by_user=avg_rating_by_user,
+            rating_std_by_user=rating_std_by_user,
+            review_length_avg_user=review_length_avg_user,
+            reviews_per_day_user=reviews_per_day_user,
+        )
         spam_prob  = float(spam_model.predict_proba(spam_feats)[0][1])
         SPAM_THRESHOLD = 0.184
         is_spam    = spam_prob >= SPAM_THRESHOLD
+        is_spam    = spam_prob >= spam_threshold
 
         # ── Render ─────────────────────────────────────────────────────────────
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -306,6 +239,7 @@ if run:
             spam_label = "Spam Review" if is_spam else "Genuine Review"
             spam_emoji = "🚨" if is_spam else "✅"
             spam_sub   = f"Spam probability: {spam_prob:.0%}"
+            spam_sub   = f"Spam probability: {spam_prob:.0%} (threshold {spam_threshold:.2f})"
             bar_color  = "#ff4545" if is_spam else "#38d96a"
             st.markdown(f"""
             <div class="result-card {spam_card}">
@@ -331,319 +265,3 @@ if run:
                 <div class="card-verdict">{cfg['emoji']} {cfg['label']}</div>
                 <div class="card-sub">{intensity} {cfg['label'].lower()} · {sent_conf:.0%} confident</div>
                 <div class="conf-wrap">
-                    <div class="conf-label">
-                        <span>Confidence</span>
-                        <span>{sent_conf:.0%}</span>
-                    </div>
-                    <div class="conf-bar-bg">
-                        <div class="conf-bar-fill" style="width:{sent_conf*100:.1f}%;background:{cfg['color']};"></div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # ── Probability breakdown ───────────────────────────────────────────────
-        with st.expander("Sentiment class probabilities"):
-            classes = sent_model.classes_
-            for cls, p in sorted(zip(classes, sent_proba), key=lambda x: -x[1]):
-                c = SENTIMENT_CONFIG.get(cls, SENTIMENT_CONFIG[0])
-                st.markdown(f"""
-                <div style="margin-bottom:0.6rem;">
-                    <div class="conf-label">
-                        <span>{c['emoji']} {c['label']}</span>
-                        <span>{p:.1%}</span>
-                    </div>
-                    <div class="conf-bar-bg">
-                        <div class="conf-bar-fill" style="width:{p*100:.1f}%;background:{c['color']};"></div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # ── Contextual tip ─────────────────────────────────────────────────────
-        if is_spam and sent_pred == 1:
-            tip = "⚠️ High spam probability with positive sentiment — pattern consistent with fake positive reviews."
-        elif is_spam and sent_pred == -1:
-            tip = "⚠️ Spam detected with negative sentiment — could be a competitor attack or bot review."
-        elif not is_spam and sent_pred == 1:
-            tip = "✅ Genuine positive review — this looks authentic and trustworthy."
-        elif not is_spam and sent_pred == -1:
-            tip = "✅ Genuine negative review — real user frustration, worth acting on."
-        else:
-            tip = "ℹ️ Neutral review classified as genuine. Low sentiment signal."
-
-        st.markdown(f'<div class="tip-box">{tip}</div>', unsafe_allow_html=True)
-
-
-
-
-# import streamlit as st
-# import joblib
-
-# # ======================
-# # PAGE CONFIG
-# # ======================
-# st.set_page_config(page_title="AI Review Analyzer", layout="wide")
-
-# st.title("🧠 AI Review Intelligence System")
-# st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
-
-# # ======================
-# # LOAD MODELS (NO CACHE)
-# # ======================
-# # def load_models():
-# #     #spam_model = joblib.load("spam_lightgbm_model.pkl")
-# #     sentiment_model = joblib.load("sentiment_lg_model.pkl")
-# #     vectorizer = joblib.load("tfidf_vectorizer.pkl")
-# #     return spam_model, sentiment_model, vectorizer
-
-# # ======================
-# # SESSION STATE
-# # ======================
-# if "history" not in st.session_state:
-#     st.session_state.history = []
-
-# # ======================
-# # INPUT
-# # ======================
-# review = st.text_area("✍️ Enter a review:")
-
-# # ======================
-# # ANALYZE BUTTON
-# # ======================
-# if st.button("🔍 Analyze"):
-
-#     if not review.strip():
-#         st.warning("Please enter a review.")
-#     else:
-#         try:
-#             with st.spinner("🔄 Loading models..."):
-#                 spam_model, sentiment_model, vectorizer = load_models()
-#         except Exception as e:
-#             st.error(f"❌ Model loading failed: {e}")
-#             st.stop()
-
-#         # ======================
-#         # SPAM MODEL
-#         # ======================
-#         try:
-#             spam_prob = spam_model.predict_proba([review])[0][1]
-#         except Exception:
-#             spam_prob = 0.0
-
-#         spam_pred = 1 if spam_prob > 0.5 else 0
-
-#         # ======================
-#         # SENTIMENT MODEL
-#         # ======================
-#         tfidf = vectorizer.transform([review])
-
-#         sent_pred = sentiment_model.predict(tfidf)[0]
-#         sent_prob = sentiment_model.predict_proba(tfidf)[0]
-
-#         label_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
-#         sentiment = label_map.get(sent_pred, "Unknown")
-
-#         confidence = int(max(sent_prob) * 100)
-
-#         # ======================
-#         # STORE RESULT
-#         # ======================
-#         st.session_state.history.append({
-#             "review": review,
-#             "spam": spam_pred,
-#             "spam_prob": spam_prob,
-#             "sentiment": sentiment,
-#             "confidence": confidence
-#         })
-
-# # ======================
-# # DISPLAY RESULTS
-# # ======================
-# st.markdown("---")
-# st.subheader("📋 Review Analysis")
-
-# for item in reversed(st.session_state.history):
-
-#     with st.container():
-
-#         st.markdown(
-#             """
-#             <div style="
-#                 border:1px solid #ddd;
-#                 padding:15px;
-#                 border-radius:10px;
-#                 margin-bottom:10px;
-#                 background-color:#fafafa;
-#             ">
-#             """,
-#             unsafe_allow_html=True
-#         )
-
-#         st.markdown(f"**📝 Review:** {item['review']}")
-
-#         if item["spam"] == 1:
-#             st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
-#         else:
-#             st.markdown("✅ **Genuine Review**")
-
-#         st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
-
-#         st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # import streamlit as st
-# # import joblib
-# # import numpy as np
-
-# # # ======================
-# # # PAGE CONFIG
-# # # ======================
-# # st.set_page_config(page_title="AI Review Analyzer", layout="wide")
-
-# # st.title("🧠 AI Review Intelligence System")
-# # st.markdown("Analyze reviews using **Spam + Sentiment + Aspect Extraction**")
-
-# # # ======================
-# # # LOAD MODELS
-# # # ======================
-# # @st.cache_resource
-# # def load_models():
-
-# #     # ✅ USE YOUR EXACT FILE NAMES
-# #     spam_model = joblib.load("spam_lightgbm_model (1).pkl")
-# #     sentiment_model = joblib.load("sentiment_lg_model.pkl")
-# #     vectorizer = joblib.load("tfidf_vectorizer.pkl")
-
-# #     # ✅ FIXED: only 5 parts
-# #     parts = [np.load(f"review_part_{i}.npy", mmap_mode='r') for i in range(10)]
-# #     review_embeddings = np.concatenate(parts, axis=0)
-
-# #     features_list = joblib.load("features_list.pkl")
-
-# #     return spam_model, sentiment_model, vectorizer, review_embeddings, features_list
-
-
-# # spam_model, sentiment_model, vectorizer, review_embeddings, features_list = load_models()
-
-# # from aspect_model import predict_aspects
-
-# # # ======================
-# # # SESSION STATE
-# # # ======================
-# # if "history" not in st.session_state:
-# #     st.session_state.history = []
-
-# # # ======================
-# # # INPUT
-# # # ======================
-# # review = st.text_area("✍️ Enter a review:")
-
-# # if st.button("🔍 Analyze"):
-
-# #     if review.strip():
-
-# #         # ======================
-# #         # SPAM MODEL
-# #         # ======================
-# #         try:
-# #             spam_prob = spam_model.predict_proba([review])[0][1]
-# #         except:
-# #             # fallback if model expects numeric features
-# #             spam_prob = 0.0
-
-# #         spam_pred = 1 if spam_prob > 0.5 else 0
-
-# #         # ======================
-# #         # SENTIMENT MODEL
-# #         # ======================
-# #         tfidf = vectorizer.transform([review])
-
-# #         sent_pred = sentiment_model.predict(tfidf)[0]
-# #         sent_prob = sentiment_model.predict_proba(tfidf)[0]
-
-# #         label_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
-# #         sentiment = label_map.get(sent_pred, "Unknown")
-
-# #         confidence = int(max(sent_prob) * 100)
-
-# #         # ======================
-# #         # ASPECT MODEL
-# #         # ======================
-# #         aspects = predict_aspects(
-# #             review,
-# #             review_embeddings,
-# #             features_list,
-# #             vectorizer
-# #         )
-
-# #         # ======================
-# #         # STORE RESULT
-# #         # ======================
-# #         st.session_state.history.append({
-# #             "review": review,
-# #             "spam": spam_pred,
-# #             "spam_prob": spam_prob,
-# #             "sentiment": sentiment,
-# #             "confidence": confidence,
-# #             "aspects": aspects
-# #         })
-
-# # # ======================
-# # # DISPLAY RESULTS
-# # # ======================
-# # st.markdown("---")
-# # st.subheader("📋 Review Analysis")
-
-# # for item in reversed(st.session_state.history):
-
-# #     with st.container():
-
-# #         st.markdown("""
-# #         <div style="
-# #             border:1px solid #ddd;
-# #             padding:15px;
-# #             border-radius:10px;
-# #             margin-bottom:10px;
-# #             background-color:#fafafa;
-# #         ">
-# #         """, unsafe_allow_html=True)
-
-# #         # Review
-# #         st.markdown(f"**📝 Review:** {item['review']}")
-
-# #         # Spam
-# #         if item["spam"] == 1:
-# #             st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
-# #         else:
-# #             st.markdown("✅ **Genuine Review**")
-
-# #         # Sentiment
-# #         st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
-
-# #         # Aspects
-# #         st.markdown("🏷️ **Aspects:**")
-# #         if item["aspects"]:
-# #             cols = st.columns(len(item["aspects"]))
-# #             for i, a in enumerate(item["aspects"]):
-# #                 cols[i].info(a)
-# #         else:
-# #             st.write("No aspects found")
-
-# #         st.markdown("</div>", unsafe_allow_html=True)
