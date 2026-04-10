@@ -23,39 +23,60 @@ def load_models():
 spam_model, sentiment_model, vectorizer = load_models()
 
 # ======================
-# FEATURE ENGINEERING (MATCH TRAINING)
+# SENTIMENT HELPERS
+# ======================
+label_reverse_map = {
+    -1: "Negative",
+     0: "Neutral",
+     1: "Positive"
+}
+
+def sentiment_emoji_and_label(pred_class, percent):
+
+    if pred_class == 0:
+        return "😐", "Neutral"
+
+    if pred_class == 1:
+        if percent >= 96:
+            return "🤩", "Extremely Positive"
+        elif percent >= 87:
+            return "😄", "Very Positive"
+        elif percent >= 70:
+            return "🙂", "Positive"
+        else:
+            return "😊", "Slightly Positive"
+
+    if pred_class == -1:
+        if percent >= 95:
+            return "🤬", "Extremely Negative"
+        elif percent >= 85:
+            return "😠", "Very Negative"
+        elif percent >= 70:
+            return "😞", "Negative"
+        else:
+            return "😕", "Slightly Negative"
+
+# ======================
+# SPAM FEATURE ENGINEERING
 # ======================
 def build_spam_features(review, rating=4):
-    
+
     text = str(review)
 
-    # basic
-    word_count = len(text.split())
-
-    # TF-IDF stats (IMPORTANT)
     tfidf_vec = vectorizer.transform([text])
     tfidf_nonzero_ratio = tfidf_vec.getnnz() / tfidf_vec.shape[1]
 
-    # ---- USER FEATURES (DEFAULT APPROXIMATION) ----
-    num_reviews_by_user = 1.0
-    avg_rating_by_user = rating
-    rating_std_by_user = 0.0
-    review_length_avg_user = len(text)
-    reviews_per_day_user = 1.0
-
-    # Final feature vector (ORDER MUST MATCH TRAINING)
     features = np.array([[
         rating,
-        num_reviews_by_user,
-        avg_rating_by_user,
-        rating_std_by_user,
-        review_length_avg_user,
-        reviews_per_day_user,
+        1.0,                     # num_reviews_by_user
+        rating,                  # avg_rating_by_user
+        0.0,                     # rating_std_by_user
+        len(text),               # review_length_avg_user
+        1.0,                     # reviews_per_day_user
         tfidf_nonzero_ratio
     ]])
 
     return features
-
 
 # ======================
 # SESSION STATE
@@ -74,7 +95,7 @@ if st.button("🔍 Analyze"):
     if review.strip():
 
         # ======================
-        # SPAM MODEL (FIXED PIPELINE)
+        # SPAM MODEL
         # ======================
         try:
             features = build_spam_features(review, rating)
@@ -82,20 +103,20 @@ if st.button("🔍 Analyze"):
         except:
             spam_prob = 0.0
 
-        spam_pred = 1 if spam_prob > 0.2 else 0   # lower threshold
+        spam_pred = 1 if spam_prob > 0.2 else 0
 
         # ======================
-        # SENTIMENT MODEL
+        # SENTIMENT MODEL (CORRECT + ENHANCED)
         # ======================
-        tfidf = vectorizer.transform([review])
+        tfidf = vectorizer.transform([review.lower()])
 
         sent_pred = sentiment_model.predict(tfidf)[0]
         sent_prob = sentiment_model.predict_proba(tfidf)[0]
 
-        label_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
-        sentiment = label_map.get(sent_pred, "Unknown")
+        pred_prob = sent_prob[list(sentiment_model.classes_).index(sent_pred)]
+        percent = min(99, int(round(pred_prob * 100)))
 
-        confidence = int(max(sent_prob) * 100)
+        emoji, intensity_label = sentiment_emoji_and_label(sent_pred, percent)
 
         # ======================
         # STORE RESULT
@@ -104,8 +125,10 @@ if st.button("🔍 Analyze"):
             "review": review,
             "spam": spam_pred,
             "spam_prob": spam_prob,
-            "sentiment": sentiment,
-            "confidence": confidence
+            "emoji": emoji,
+            "intensity": intensity_label,
+            "percent": percent,
+            "probs": sent_prob
         })
 
 # ======================
@@ -118,16 +141,161 @@ for item in reversed(st.session_state.history):
 
     with st.container():
 
-        st.markdown(f"**📝 Review:** {item['review']}")
+        st.markdown(f"### 📝 {item['review']}")
 
+        # Spam
         if item["spam"] == 1:
-            st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
+            st.error(f"🚨 Spam Detected ({item['spam_prob']:.2f})")
         else:
-            st.markdown("✅ **Genuine Review**")
+            st.success("✅ Genuine Review")
 
-        st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
+        # Sentiment main
+        st.markdown(f"## {item['emoji']} {item['intensity']} ({item['percent']}%)")
+
+        # Breakdown
+        with st.expander("📊 Sentiment Breakdown"):
+            for c, p in zip(sentiment_model.classes_, item["probs"]):
+                st.progress(float(p))
+                st.write(f"{label_reverse_map[c]}: {p*100:.1f}%")
 
         st.markdown("---")
+
+
+
+
+
+
+
+# import streamlit as st
+# import joblib
+# import numpy as np
+
+# # ======================
+# # PAGE CONFIG
+# # ======================
+# st.set_page_config(page_title="AI Review Analyzer", layout="wide")
+
+# st.title("🧠 AI Review Intelligence System")
+# st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
+
+# # ======================
+# # LOAD MODELS
+# # ======================
+# @st.cache_resource
+# def load_models():
+#     spam_model = joblib.load("spam_lightgbm_model.pkl")
+#     sentiment_model = joblib.load("sentiment_lg_model.pkl")
+#     vectorizer = joblib.load("tfidf_vectorizer.pkl")
+#     return spam_model, sentiment_model, vectorizer
+
+# spam_model, sentiment_model, vectorizer = load_models()
+
+# # ======================
+# # FEATURE ENGINEERING (MATCH TRAINING)
+# # ======================
+# def build_spam_features(review, rating=4):
+    
+#     text = str(review)
+
+#     # basic
+#     word_count = len(text.split())
+
+#     # TF-IDF stats (IMPORTANT)
+#     tfidf_vec = vectorizer.transform([text])
+#     tfidf_nonzero_ratio = tfidf_vec.getnnz() / tfidf_vec.shape[1]
+
+#     # ---- USER FEATURES (DEFAULT APPROXIMATION) ----
+#     num_reviews_by_user = 1.0
+#     avg_rating_by_user = rating
+#     rating_std_by_user = 0.0
+#     review_length_avg_user = len(text)
+#     reviews_per_day_user = 1.0
+
+#     # Final feature vector (ORDER MUST MATCH TRAINING)
+#     features = np.array([[
+#         rating,
+#         num_reviews_by_user,
+#         avg_rating_by_user,
+#         rating_std_by_user,
+#         review_length_avg_user,
+#         reviews_per_day_user,
+#         tfidf_nonzero_ratio
+#     ]])
+
+#     return features
+
+
+# # ======================
+# # SESSION STATE
+# # ======================
+# if "history" not in st.session_state:
+#     st.session_state.history = []
+
+# # ======================
+# # INPUT
+# # ======================
+# review = st.text_area("✍️ Enter a review:")
+# rating = st.slider("⭐ Rating", 1, 5, 4)
+
+# if st.button("🔍 Analyze"):
+
+#     if review.strip():
+
+#         # ======================
+#         # SPAM MODEL (FIXED PIPELINE)
+#         # ======================
+#         try:
+#             features = build_spam_features(review, rating)
+#             spam_prob = float(spam_model.predict_proba(features)[0][1])
+#         except:
+#             spam_prob = 0.0
+
+#         spam_pred = 1 if spam_prob > 0.2 else 0   # lower threshold
+
+#         # ======================
+#         # SENTIMENT MODEL
+#         # ======================
+#         tfidf = vectorizer.transform([review])
+
+#         sent_pred = sentiment_model.predict(tfidf)[0]
+#         sent_prob = sentiment_model.predict_proba(tfidf)[0]
+
+#         label_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
+#         sentiment = label_map.get(sent_pred, "Unknown")
+
+#         confidence = int(max(sent_prob) * 100)
+
+#         # ======================
+#         # STORE RESULT
+#         # ======================
+#         st.session_state.history.append({
+#             "review": review,
+#             "spam": spam_pred,
+#             "spam_prob": spam_prob,
+#             "sentiment": sentiment,
+#             "confidence": confidence
+#         })
+
+# # ======================
+# # DISPLAY RESULTS
+# # ======================
+# st.markdown("---")
+# st.subheader("📋 Review Analysis")
+
+# for item in reversed(st.session_state.history):
+
+#     with st.container():
+
+#         st.markdown(f"**📝 Review:** {item['review']}")
+
+#         if item["spam"] == 1:
+#             st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
+#         else:
+#             st.markdown("✅ **Genuine Review**")
+
+#         st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
+
+#         st.markdown("---")
 
 
 
