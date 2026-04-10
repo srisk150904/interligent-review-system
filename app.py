@@ -1,7 +1,6 @@
 import streamlit as st
 import joblib
 import numpy as np
-import re
 
 # ======================
 # PAGE CONFIG
@@ -24,33 +23,39 @@ def load_models():
 spam_model, sentiment_model, vectorizer = load_models()
 
 # ======================
-# FEATURE ENGINEERING (IMPORTANT FIX)
+# FEATURE ENGINEERING (MATCH TRAINING)
 # ======================
-def extract_features(text):
+def build_spam_features(review, rating=4):
+    
+    text = str(review)
+
+    # basic
     word_count = len(text.split())
-    exclamations = text.count("!")
 
-    letters = [c for c in text if c.isalpha()]
-    uppercase_ratio = (
-        sum(1 for c in letters if c.isupper()) / len(letters)
-        if letters else 0
-    )
+    # TF-IDF stats (IMPORTANT)
+    tfidf_vec = vectorizer.transform([text])
+    tfidf_nonzero_ratio = tfidf_vec.getnnz() / tfidf_vec.shape[1]
 
-    emoji_count = len(re.findall(r'[😍🔥😱😂😡]', text))
+    # ---- USER FEATURES (DEFAULT APPROXIMATION) ----
+    num_reviews_by_user = 1.0
+    avg_rating_by_user = rating
+    rating_std_by_user = 0.0
+    review_length_avg_user = len(text)
+    reviews_per_day_user = 1.0
 
-    return np.array([[word_count, exclamations, uppercase_ratio, emoji_count]])
+    # Final feature vector (ORDER MUST MATCH TRAINING)
+    features = np.array([[
+        rating,
+        num_reviews_by_user,
+        avg_rating_by_user,
+        rating_std_by_user,
+        review_length_avg_user,
+        reviews_per_day_user,
+        tfidf_nonzero_ratio
+    ]])
 
-# ======================
-# RULE-BASED BOOST (HYBRID AI)
-# ======================
-def rule_based_spam(text):
-    if text.count("!") > 3:
-        return True
-    if sum(1 for c in text if c.isupper()) / max(len(text), 1) > 0.4:
-        return True
-    if len(re.findall(r'[😍🔥😱😂😡]', text)) > 2:
-        return True
-    return False
+    return features
+
 
 # ======================
 # SESSION STATE
@@ -62,22 +67,22 @@ if "history" not in st.session_state:
 # INPUT
 # ======================
 review = st.text_area("✍️ Enter a review:")
+rating = st.slider("⭐ Rating", 1, 5, 4)
 
 if st.button("🔍 Analyze"):
 
     if review.strip():
 
         # ======================
-        # SPAM MODEL (FIXED)
+        # SPAM MODEL (FIXED PIPELINE)
         # ======================
         try:
-            features = extract_features(review)
+            features = build_spam_features(review, rating)
             spam_prob = float(spam_model.predict_proba(features)[0][1])
         except:
             spam_prob = 0.0
 
-        # Hybrid decision
-        is_spam = (spam_prob > 0.3) or rule_based_spam(review)
+        spam_pred = 1 if spam_prob > 0.2 else 0   # lower threshold
 
         # ======================
         # SENTIMENT MODEL
@@ -97,7 +102,7 @@ if st.button("🔍 Analyze"):
         # ======================
         st.session_state.history.append({
             "review": review,
-            "spam": is_spam,
+            "spam": spam_pred,
             "spam_prob": spam_prob,
             "sentiment": sentiment,
             "confidence": confidence
@@ -113,32 +118,16 @@ for item in reversed(st.session_state.history):
 
     with st.container():
 
-        st.markdown("""
-        <div style="
-            border:1px solid #ddd;
-            padding:15px;
-            border-radius:10px;
-            margin-bottom:10px;
-            background-color:#fafafa;
-        ">
-        """, unsafe_allow_html=True)
-
-        # Review
         st.markdown(f"**📝 Review:** {item['review']}")
 
-        # Spam
-        if item["spam"]:
-            st.markdown(f"🚨 **Spam Detected** ({item['spam_prob']:.2f})")
+        if item["spam"] == 1:
+            st.markdown(f"🚨 **Spam** ({item['spam_prob']:.2f})")
         else:
             st.markdown("✅ **Genuine Review**")
 
-        # Sentiment
         st.markdown(f"😊 **Sentiment:** {item['sentiment']} ({item['confidence']}%)")
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
-
+        st.markdown("---")
 
 
 
