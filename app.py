@@ -57,11 +57,10 @@ def sentiment_emoji_and_label(pred_class, percent):
             return "😕", "Slightly Negative"
 
 # ======================
-# RATING vs SENTIMENT CHECK (NEW)
+# RATING vs SENTIMENT CHECK
 # ======================
 def check_rating_sentiment_mismatch(rating, pred_class):
 
-    # Expected sentiment from rating
     if rating <= 2:
         expected = -1
     elif rating == 3:
@@ -69,15 +68,12 @@ def check_rating_sentiment_mismatch(rating, pred_class):
     else:
         expected = 1
 
-    # Match
     if expected == pred_class:
         return "match", "✅ Rating and review are consistent"
 
-    # Slight mismatch
     if abs(expected - pred_class) == 1:
         return "slight", "⚠️ Slight mismatch between rating and review"
 
-    # Strong mismatch
     return "strong", "🚨 Strong mismatch: rating contradicts review"
 
 # ======================
@@ -106,6 +102,10 @@ def build_spam_features(review, rating=4):
 # SESSION STATE
 # ======================
 if "history" not in st.session_state:
+    st.session_state.history = []
+
+# OPTIONAL: Clear button (good UX)
+if st.button("🗑️ Clear History"):
     st.session_state.history = []
 
 # ======================
@@ -186,13 +186,17 @@ for item in reversed(st.session_state.history):
         # Sentiment
         st.markdown(f"## {item['emoji']} {item['intensity']} ({item['percent']}%)")
 
-        # Rating vs Sentiment
-        if item["mismatch_type"] == "match":
-            st.success(item["mismatch_msg"])
-        elif item["mismatch_type"] == "slight":
-            st.warning(item["mismatch_msg"])
-        else:
-            st.error(item["mismatch_msg"])
+        # SAFE mismatch handling (fix for KeyError)
+        mismatch_type = item.get("mismatch_type")
+        mismatch_msg = item.get("mismatch_msg")
+
+        if mismatch_type:
+            if mismatch_type == "match":
+                st.success(mismatch_msg)
+            elif mismatch_type == "slight":
+                st.warning(mismatch_msg)
+            else:
+                st.error(mismatch_msg)
 
         # Breakdown
         with st.expander("📊 Sentiment Breakdown"):
