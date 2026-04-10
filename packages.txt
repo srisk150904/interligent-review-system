@@ -1,3 +1,4 @@
 build-essential
 gcc
 g++
+zlib1g-dev
