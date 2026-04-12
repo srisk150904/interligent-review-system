@@ -15,7 +15,6 @@ st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
 # ======================
 @st.cache_resource
 def load_models():
-    # 🔥 UPDATED FILES
     spam_model = joblib.load("spam_logreg_model.pkl")
     spam_vectorizer = joblib.load("tfidf_vectorizer_spam.pkl")
 
@@ -101,28 +100,7 @@ if st.button("🔍 Analyze"):
     if review.strip():
 
         # ======================
-        # 🔥 SPAM MODEL (UPDATED)
-        # ======================
-        spam_tfidf = spam_vectorizer.transform([review])
-        spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
-
-        # No hard threshold → use interpretation
-        if spam_prob > 0.75 and len(review.split()) > 20:
-            st.warning("⚠️ Long detailed review flagged — may be false positive")
-        if spam_prob > 0.75 and abs(sent_pred) == 1:
-            st.info("ℹ️ Strong sentiment may influence spam score")
-        if spam_prob >= 0.9:
-            spam_label = "🚨 Very Likely Spam"
-        elif spam_prob >= 0.75:
-            spam_label = "⚠️ Suspicious (review needed)"
-        elif spam_prob >= 0.5:
-            spam_label = "🟡 Possibly Genuine"
-        else:
-            spam_label = "✅ Likely Genuine"
-        
-
-        # ======================
-        # SENTIMENT MODEL
+        # SENTIMENT MODEL (FIRST - FIXED)
         # ======================
         tfidf = sentiment_vectorizer.transform([review.lower()])
 
@@ -133,6 +111,36 @@ if st.button("🔍 Analyze"):
         percent = min(99, int(round(pred_prob * 100)))
 
         emoji, intensity_label = sentiment_emoji_and_label(sent_pred, percent)
+
+        # ======================
+        # SPAM MODEL
+        # ======================
+        spam_tfidf = spam_vectorizer.transform([review])
+        spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
+
+        # ======================
+        # SMART WARNINGS
+        # ======================
+        if spam_prob > 0.75 and len(review.split()) > 20:
+            st.warning("⚠️ Long detailed review flagged — may be false positive")
+
+        if spam_prob > 0.75 and abs(sent_pred) == 1:
+            st.info("ℹ️ Strong sentiment may influence spam score")
+
+        if spam_prob > 0.8 and sent_pred == -1:
+            st.warning("⚠️ Negative reviews may be misclassified as spam")
+
+        # ======================
+        # SPAM LABEL
+        # ======================
+        if spam_prob >= 0.9:
+            spam_label = "🚨 Very Likely Spam"
+        elif spam_prob >= 0.75:
+            spam_label = "⚠️ Suspicious (review needed)"
+        elif spam_prob >= 0.5:
+            spam_label = "🟡 Possibly Genuine"
+        else:
+            spam_label = "✅ Likely Genuine"
 
         # ======================
         # RATING vs SENTIMENT
@@ -169,14 +177,14 @@ for item in reversed(st.session_state.history):
 
         st.markdown(f"### 📝 {item['review']}")
 
-        # 🔥 Spam display (probability-based)
+        # Spam
         st.info(f"🛡️ Spam Risk: {item['spam_prob']:.2f}")
         st.markdown(f"**{item['spam_label']}**")
 
         # Sentiment
         st.markdown(f"## {item['emoji']} {item['intensity']} ({item['percent']}%)")
 
-        # Rating vs sentiment
+        # Rating consistency
         if item["mismatch_type"] == "match":
             st.success(item["mismatch_msg"])
         elif item["mismatch_type"] == "slight":
