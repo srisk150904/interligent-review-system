@@ -15,12 +15,17 @@ st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
 # ======================
 @st.cache_resource
 def load_models():
-    spam_model = joblib.load("spam_lightgbm_model.pkl")
-    sentiment_model = joblib.load("sentiment_lg_model.pkl")
-    vectorizer = joblib.load("tfidf_vectorizer.pkl")
-    return spam_model, sentiment_model, vectorizer
+    # 🔥 UPDATED FILES
+    spam_model = joblib.load("spam_logreg_model.pkl")
+    spam_vectorizer = joblib.load("tfidf_vectorizer_spam.pkl")
 
-spam_model, sentiment_model, vectorizer = load_models()
+    sentiment_model = joblib.load("sentiment_lg_model.pkl")
+    sentiment_vectorizer = joblib.load("tfidf_vectorizer.pkl")
+
+    return spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer
+
+
+spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer = load_models()
 
 # ======================
 # SENTIMENT HELPERS
@@ -77,34 +82,11 @@ def check_rating_sentiment_mismatch(rating, pred_class):
     return "strong", "🚨 Strong mismatch: rating contradicts review"
 
 # ======================
-# SPAM FEATURE ENGINEERING
-# ======================
-def build_spam_features(review, rating=4):
-
-    text = str(review)
-
-    tfidf_vec = vectorizer.transform([text])
-    tfidf_nonzero_ratio = tfidf_vec.getnnz() / tfidf_vec.shape[1]
-
-    features = np.array([[
-        rating,
-        1.0,
-        rating,
-        0.0,
-        len(text),
-        1.0,
-        tfidf_nonzero_ratio
-    ]])
-
-    return features
-
-# ======================
 # SESSION STATE
 # ======================
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# OPTIONAL: Clear button (good UX)
 if st.button("🗑️ Clear History"):
     st.session_state.history = []
 
@@ -119,20 +101,23 @@ if st.button("🔍 Analyze"):
     if review.strip():
 
         # ======================
-        # SPAM MODEL
+        # 🔥 SPAM MODEL (UPDATED)
         # ======================
-        try:
-            features = build_spam_features(review, rating)
-            spam_prob = float(spam_model.predict_proba(features)[0][1])
-        except:
-            spam_prob = 0.0
+        spam_tfidf = spam_vectorizer.transform([review])
+        spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
 
-        spam_pred = 1 if spam_prob > 0.2 else 0
+        # No hard threshold → use interpretation
+        if spam_prob >= 0.7:
+            spam_label = "🚨 High Risk Spam"
+        elif spam_prob >= 0.4:
+            spam_label = "⚠️ Medium Risk"
+        else:
+            spam_label = "✅ Low Risk (Likely Genuine)"
 
         # ======================
         # SENTIMENT MODEL
         # ======================
-        tfidf = vectorizer.transform([review.lower()])
+        tfidf = sentiment_vectorizer.transform([review.lower()])
 
         sent_pred = sentiment_model.predict(tfidf)[0]
         sent_prob = sentiment_model.predict_proba(tfidf)[0]
@@ -155,8 +140,8 @@ if st.button("🔍 Analyze"):
         # ======================
         st.session_state.history.append({
             "review": review,
-            "spam": spam_pred,
             "spam_prob": spam_prob,
+            "spam_label": spam_label,
             "emoji": emoji,
             "intensity": intensity_label,
             "percent": percent,
@@ -177,26 +162,20 @@ for item in reversed(st.session_state.history):
 
         st.markdown(f"### 📝 {item['review']}")
 
-        # Spam
-        if item["spam"] == 1:
-            st.error(f"🚨 Spam Detected ({item['spam_prob']:.2f})")
-        else:
-            st.success("✅ Genuine Review")
+        # 🔥 Spam display (probability-based)
+        st.info(f"🛡️ Spam Risk: {item['spam_prob']:.2f}")
+        st.markdown(f"**{item['spam_label']}**")
 
         # Sentiment
         st.markdown(f"## {item['emoji']} {item['intensity']} ({item['percent']}%)")
 
-        # SAFE mismatch handling (fix for KeyError)
-        mismatch_type = item.get("mismatch_type")
-        mismatch_msg = item.get("mismatch_msg")
-
-        if mismatch_type:
-            if mismatch_type == "match":
-                st.success(mismatch_msg)
-            elif mismatch_type == "slight":
-                st.warning(mismatch_msg)
-            else:
-                st.error(mismatch_msg)
+        # Rating vs sentiment
+        if item["mismatch_type"] == "match":
+            st.success(item["mismatch_msg"])
+        elif item["mismatch_type"] == "slight":
+            st.warning(item["mismatch_msg"])
+        else:
+            st.error(item["mismatch_msg"])
 
         # Breakdown
         with st.expander("📊 Sentiment Breakdown"):
@@ -205,6 +184,214 @@ for item in reversed(st.session_state.history):
                 st.write(f"{label_reverse_map[c]}: {p*100:.1f}%")
 
         st.markdown("---")
+
+# import streamlit as st
+# import joblib
+# import numpy as np
+
+# # ======================
+# # PAGE CONFIG
+# # ======================
+# st.set_page_config(page_title="AI Review Analyzer", layout="wide")
+
+# st.title("🧠 AI Review Intelligence System")
+# st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
+
+# # ======================
+# # LOAD MODELS
+# # ======================
+# @st.cache_resource
+# def load_models():
+#     spam_model = joblib.load("spam_lightgbm_model.pkl")
+#     sentiment_model = joblib.load("sentiment_lg_model.pkl")
+#     vectorizer = joblib.load("tfidf_vectorizer.pkl")
+#     return spam_model, sentiment_model, vectorizer
+
+# spam_model, sentiment_model, vectorizer = load_models()
+
+# # ======================
+# # SENTIMENT HELPERS
+# # ======================
+# label_reverse_map = {
+#     -1: "Negative",
+#      0: "Neutral",
+#      1: "Positive"
+# }
+
+# def sentiment_emoji_and_label(pred_class, percent):
+
+#     if pred_class == 0:
+#         return "😐", "Neutral"
+
+#     if pred_class == 1:
+#         if percent >= 96:
+#             return "🤩", "Extremely Positive"
+#         elif percent >= 87:
+#             return "😄", "Very Positive"
+#         elif percent >= 70:
+#             return "🙂", "Positive"
+#         else:
+#             return "😊", "Slightly Positive"
+
+#     if pred_class == -1:
+#         if percent >= 95:
+#             return "🤬", "Extremely Negative"
+#         elif percent >= 85:
+#             return "😠", "Very Negative"
+#         elif percent >= 70:
+#             return "😞", "Negative"
+#         else:
+#             return "😕", "Slightly Negative"
+
+# # ======================
+# # RATING vs SENTIMENT CHECK
+# # ======================
+# def check_rating_sentiment_mismatch(rating, pred_class):
+
+#     if rating <= 2:
+#         expected = -1
+#     elif rating == 3:
+#         expected = 0
+#     else:
+#         expected = 1
+
+#     if expected == pred_class:
+#         return "match", "✅ Rating and review are consistent"
+
+#     if abs(expected - pred_class) == 1:
+#         return "slight", "⚠️ Slight mismatch between rating and review"
+
+#     return "strong", "🚨 Strong mismatch: rating contradicts review"
+
+# # ======================
+# # SPAM FEATURE ENGINEERING
+# # ======================
+# def build_spam_features(review, rating=4):
+
+#     text = str(review)
+
+#     tfidf_vec = vectorizer.transform([text])
+#     tfidf_nonzero_ratio = tfidf_vec.getnnz() / tfidf_vec.shape[1]
+
+#     features = np.array([[
+#         rating,
+#         1.0,
+#         rating,
+#         0.0,
+#         len(text),
+#         1.0,
+#         tfidf_nonzero_ratio
+#     ]])
+
+#     return features
+
+# # ======================
+# # SESSION STATE
+# # ======================
+# if "history" not in st.session_state:
+#     st.session_state.history = []
+
+# # OPTIONAL: Clear button (good UX)
+# if st.button("🗑️ Clear History"):
+#     st.session_state.history = []
+
+# # ======================
+# # INPUT
+# # ======================
+# review = st.text_area("✍️ Enter a review:")
+# rating = st.slider("⭐ Rating", 1, 5, 4)
+
+# if st.button("🔍 Analyze"):
+
+#     if review.strip():
+
+#         # ======================
+#         # SPAM MODEL
+#         # ======================
+#         try:
+#             features = build_spam_features(review, rating)
+#             spam_prob = float(spam_model.predict_proba(features)[0][1])
+#         except:
+#             spam_prob = 0.0
+
+#         spam_pred = 1 if spam_prob > 0.2 else 0
+
+#         # ======================
+#         # SENTIMENT MODEL
+#         # ======================
+#         tfidf = vectorizer.transform([review.lower()])
+
+#         sent_pred = sentiment_model.predict(tfidf)[0]
+#         sent_prob = sentiment_model.predict_proba(tfidf)[0]
+
+#         pred_prob = sent_prob[list(sentiment_model.classes_).index(sent_pred)]
+#         percent = min(99, int(round(pred_prob * 100)))
+
+#         emoji, intensity_label = sentiment_emoji_and_label(sent_pred, percent)
+
+#         # ======================
+#         # RATING vs SENTIMENT
+#         # ======================
+#         mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
+#             rating,
+#             sent_pred
+#         )
+
+#         # ======================
+#         # STORE RESULT
+#         # ======================
+#         st.session_state.history.append({
+#             "review": review,
+#             "spam": spam_pred,
+#             "spam_prob": spam_prob,
+#             "emoji": emoji,
+#             "intensity": intensity_label,
+#             "percent": percent,
+#             "probs": sent_prob,
+#             "mismatch_type": mismatch_type,
+#             "mismatch_msg": mismatch_msg
+#         })
+
+# # ======================
+# # DISPLAY RESULTS
+# # ======================
+# st.markdown("---")
+# st.subheader("📋 Review Analysis")
+
+# for item in reversed(st.session_state.history):
+
+#     with st.container():
+
+#         st.markdown(f"### 📝 {item['review']}")
+
+#         # Spam
+#         if item["spam"] == 1:
+#             st.error(f"🚨 Spam Detected ({item['spam_prob']:.2f})")
+#         else:
+#             st.success("✅ Genuine Review")
+
+#         # Sentiment
+#         st.markdown(f"## {item['emoji']} {item['intensity']} ({item['percent']}%)")
+
+#         # SAFE mismatch handling (fix for KeyError)
+#         mismatch_type = item.get("mismatch_type")
+#         mismatch_msg = item.get("mismatch_msg")
+
+#         if mismatch_type:
+#             if mismatch_type == "match":
+#                 st.success(mismatch_msg)
+#             elif mismatch_type == "slight":
+#                 st.warning(mismatch_msg)
+#             else:
+#                 st.error(mismatch_msg)
+
+#         # Breakdown
+#         with st.expander("📊 Sentiment Breakdown"):
+#             for c, p in zip(sentiment_model.classes_, item["probs"]):
+#                 st.progress(float(p))
+#                 st.write(f"{label_reverse_map[c]}: {p*100:.1f}%")
+
+#         st.markdown("---")
 
 
 
