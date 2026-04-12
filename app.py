@@ -109,7 +109,7 @@ if st.button("🔍 Analyze"):
         # No hard threshold → use interpretation
         if spam_prob >= 0.8:
             spam_label = "🚨 High Risk Spam"
-        elif spam_prob >= 0.55:
+        elif spam_prob > 0.66:
             spam_label = "⚠️ Medium Risk"
         else:
             spam_label = "✅ Low Risk (Likely Genuine)"
