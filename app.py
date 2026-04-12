@@ -35,7 +35,11 @@ label_reverse_map = {
      1: "Positive"
 }
 
-def sentiment_emoji_and_label(pred_class, percent):
+def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
+    if(pred_class!=0 and percent-neutral_percent>10):
+        precent = percent - neutral_percent
+    else:
+        return "😐", "Neutral"
 
     if pred_class == 0:
         return "😐", "Neutral"
@@ -109,8 +113,13 @@ if st.button("🔍 Analyze"):
 
         pred_prob = sent_prob[list(sentiment_model.classes_).index(sent_pred)]
         percent = min(99, int(round(pred_prob * 100)))
+        neutral_percent = int(round(neu_prob * 100))
 
-        emoji, intensity_label = sentiment_emoji_and_label(sent_pred, percent)
+        emoji, intensity_label = sentiment_emoji_and_label(
+            sent_pred,
+            percent,
+            neutral_percent
+        )
 
         # ======================
         # SPAM MODEL
@@ -135,7 +144,7 @@ if st.button("🔍 Analyze"):
         # ======================
         if spam_prob >= 0.9:
             spam_label = "🚨 Very Likely Spam"
-        elif spam_prob >= 0.75:
+        elif spam_prob >= 0.8:
             spam_label = "⚠️ Suspicious (review needed)"
         elif spam_prob >= 0.5:
             spam_label = "🟡 Possibly Genuine"
