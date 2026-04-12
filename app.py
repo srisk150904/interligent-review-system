@@ -107,6 +107,10 @@ if st.button("🔍 Analyze"):
         spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
 
         # No hard threshold → use interpretation
+        if spam_prob > 0.75 and len(review.split()) > 20:
+            st.warning("⚠️ Long detailed review flagged — may be false positive")
+        if spam_prob > 0.75 and abs(sent_pred) == 1:
+            st.info("ℹ️ Strong sentiment may influence spam score")
         if spam_prob >= 0.9:
             spam_label = "🚨 Very Likely Spam"
         elif spam_prob >= 0.75:
@@ -115,6 +119,7 @@ if st.button("🔍 Analyze"):
             spam_label = "🟡 Possibly Genuine"
         else:
             spam_label = "✅ Likely Genuine"
+        
 
         # ======================
         # SENTIMENT MODEL
