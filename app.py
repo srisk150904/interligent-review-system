@@ -53,14 +53,14 @@ body {
 }
 /* Text area label */
 div[data-testid="stTextArea"] label {
-    font-size:18px !important;
-    font-weight:500;
+    font-size:20px !important;
+    font-weight:600;
 }
 
 /* Slider label */
 div[data-testid="stSlider"] label {
-    font-size:18px !important;
-    font-weight:500;
+    font-size:19px !important;
+    font-weight:600;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -296,10 +296,10 @@ for item in reversed(st.session_state.history):
                 st.write(f"- {r}")
 
     # Sentiment breakdown
-    with st.expander("Sentiment Breakdown"):
-        for c, p in zip(sentiment_model.classes_, item["probs"]):
-            st.progress(float(p))
-            st.caption(f"{label_reverse_map[c]}: {p*100:.1f}%")
+    with st.expander("📊 Sentiment Breakdown"):
+            for c, p in zip(sentiment_model.classes_, item["probs"]):
+                st.progress(float(p))
+                st.write(f"{label_reverse_map[c]}: {p*100:.1f}%")
 
     st.markdown("---")
 
