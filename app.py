@@ -5,7 +5,7 @@ import numpy as np
 # ======================
 # PAGE CONFIG
 # ======================
-st.set_page_config(page_title="Trust-Aware Review Intelligence", layout="wide")
+st.set_page_config(layout="wide")
 
 st.title("🧠 Trust-Aware Review Intelligence System")
 
@@ -28,7 +28,7 @@ body {
 }
 .card {
     padding:16px;
-    border-radius:12px;
+    border-radius:13px;
     background:#161A23;
     border:1px solid #222;
 }
@@ -41,7 +41,7 @@ body {
     font-weight:600;
 }
 .caption {
-    font-size:13px;
+    font-size:15px;
     color:#9AA0A6;
 }
 .review-box {
@@ -49,7 +49,7 @@ body {
     border-radius:10px;
     background:#111;
     border:1px solid #222;
-    font-size:15px;
+    font-size:17px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -245,7 +245,7 @@ for item in reversed(st.session_state.history):
             <div class="value">
                 {item['emoji']} {item['intensity']} ({item['sentiment']}%)
             </div>
-            <div class="caption">Sentiment</div>
+            <div class="caption">😊 Sentiment</div>
         </div>
         """, unsafe_allow_html=True)
 
