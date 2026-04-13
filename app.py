@@ -200,23 +200,47 @@ if st.button("🔍 Analyze"):
             sent_pred, percent, neutral_percent
         )
 
+        # ======================
+        # SPAM
+        # ======================
         spam_tfidf = spam_vectorizer.transform([review])
         spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
-        sentiment_conf = adjusted_percent / 100
-        raw_trust = (1 - spam_prob) * sentiment_conf
 
+        # ======================
+        # MISMATCH
+        # ======================
         mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
             rating, sent_pred
         )
 
+        # ======================
+        # TRUST (UPDATED LOGIC)
+        # ======================
+        sentiment_conf = adjusted_percent / 100
+
+        # Base trust from spam ONLY
+        raw_trust = (1 - spam_prob)
+
+        # Penalize mismatch strongly
         if mismatch_type == "strong":
-            raw_trust *= 0.7
+            raw_trust *= 0.6
         elif mismatch_type == "slight":
             raw_trust *= 0.85
 
-        trust_score = convert_to_5_scale(raw_trust) + 0.4
+        # Small confidence adjustment (not dominance)
+        raw_trust *= (0.8 + 0.2 * sentiment_conf)
+
+        # Convert to 0–5 scale (safe clamp)
+        trust_score = min(5, convert_to_5_scale(raw_trust) + 0.4)
+
+        # ======================
+        # SPAM LABEL
+        # ======================
         spam_label = get_spam_label(spam_prob, trust_score)
 
+        # ======================
+        # STORE
+        # ======================
         st.session_state.history.append({
             "review": review,
             "spam_label": spam_label,
