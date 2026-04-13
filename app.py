@@ -97,7 +97,7 @@ def get_spam_label(spam_prob):
         return "✅ Genuine"
     elif spam_prob < 0.7 or trust_score > 3.2:
         return "🟡 Possibly Genuine"
-    elif spam_prob < 0.8 or :
+    elif spam_prob < 0.8:
         return "⚠️ Suspicious (Review Needed)"
     elif spam_prob < 0.9:
         return "🚨 Likely Spam"
