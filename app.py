@@ -29,8 +29,8 @@ body {
 .card {
     padding:16px;
     border-radius:13px;
-    background:#161A23;
-    border:1px solid #222;
+    background:#1E222B;
+    border:1px solid #2A2F3A;
 }
 .title {
     font-size:13px;
@@ -49,12 +49,23 @@ body {
     border-radius:10px;
     background:#111;
     border:1px solid #222;
-    font-size:17px;
+    font-size:20px;
+}
+/* Text area label */
+div[data-testid="stTextArea"] label {
+    font-size:18px !important;
+    font-weight:500;
+}
+
+/* Slider label */
+div[data-testid="stSlider"] label {
+    font-size:18px !important;
+    font-weight:500;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Trust-Aware Review Intelligence")
+# st.title("Trust-Aware Review Intelligence")
 
 # ======================
 # LOAD MODELS
@@ -205,7 +216,7 @@ if st.button("🔍 Analyze"):
         elif mismatch_type == "slight":
             raw_trust *= 0.85
 
-        trust_score = convert_to_5_scale(raw_trust)
+        trust_score = convert_to_5_scale(raw_trust) + 0.4
 
         st.session_state.history.append({
             "review": review,
