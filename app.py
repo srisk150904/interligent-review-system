@@ -304,10 +304,12 @@ for item in reversed(st.session_state.history):
     st.markdown("<br>", unsafe_allow_html=True)
     if item["trust_score"] < 2.2:
         st.markdown("🚨 Low Trust / Suspicious Review")
-    elif item["trust_score"] <= 3:
+    elif item["trust_score"] < 3:
         st.markdown("🟡 Moderately Trustable Review")
-    else:
+    elif item["trust_score"] < 4:
         st.markdown("✅ Highly Trustworthy Review")
+    else:
+        st.markdown("✅✅ Highly Trustworthy Review")
     
     # Consistency
     if item["mismatch_type"] == "match":
