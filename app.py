@@ -220,7 +220,7 @@ for item in reversed(st.session_state.history):
             st.metric("🛡️ Spam Risk", f"{item['spam_prob']:.2f}")
 
         with col2:
-            st.metric("😊 Sentiment", f"{item['sentiment']}%")
+            st.metric(f"{item['emoji']} Sentiment", f"{item['sentiment']}%")
 
         with col3:
             st.metric("🧠 Trust Score", f"{item['trust_score']:.2f}")
