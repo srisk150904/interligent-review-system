@@ -92,7 +92,7 @@ def convert_to_5_scale(score):
     scaled = score ** 0.6
     return round(scaled * 5, 2)
 
-def get_spam_label(spam_prob):
+def get_spam_label(spam_prob, trust_score):
     if spam_prob < 0.4 or trust_score >= 4:
         return "✅ Genuine"
     elif spam_prob < 0.7 or trust_score > 3.2:
@@ -202,7 +202,7 @@ if st.button("🔍 Analyze"):
 
         spam_tfidf = spam_vectorizer.transform([review])
         spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
-        spam_label = get_spam_label(spam_prob)
+        spam_label = get_spam_label(spam_prob, get_spam_label)
 
         mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
             rating, sent_pred
