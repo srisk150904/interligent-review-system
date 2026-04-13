@@ -235,7 +235,8 @@ for item in reversed(st.session_state.history):
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown(f"### 🛡️ {item['spam_label']}")
+            spam_label = item.get("spam_label", "⚠️ Unknown (Old Data)")
+            st.markdown(f"### 🛡️ {spam_label}")
 
         with col2:
             st.metric("🧠 Trust Score (0–5)", f"{item['trust_score']}")
