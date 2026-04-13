@@ -7,6 +7,17 @@ import numpy as np
 # ======================
 st.set_page_config(page_title="Trust-Aware Review Intelligence", layout="wide")
 
+st.title("🧠 Trust-Aware Review Intelligence System")
+
+st.markdown("""
+Analyze reviews using:
+- 🛡️ Spam Detection  
+- 😊 Sentiment Analysis  
+- ⭐ Rating Consistency  
+
+👉 Combined into a **Trust Score (0–5 scale)**
+""")
+
 # ======================
 # CLEAN UI STYLES
 # ======================
@@ -72,15 +83,15 @@ def convert_to_5_scale(score):
 
 def get_spam_label(spam_prob):
     if spam_prob < 0.4:
-        return "Genuine"
+        return "✅ Genuine"
     elif spam_prob < 0.6:
-        return "Possibly Genuine"
+        return "🟡 Possibly Genuine"
     elif spam_prob < 0.75:
-        return "Suspicious"
+        return "⚠️ Suspicious (Review Needed)"
     elif spam_prob < 0.9:
-        return "Likely Spam"
+        return "🚨 Likely Spam"
     else:
-        return "Very Likely Spam"
+        return "🚨🚨 Very Likely Spam"
 
 def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
     if pred_class != 0:
@@ -123,12 +134,12 @@ def check_rating_sentiment_mismatch(rating, pred_class):
         expected = 1
 
     if expected == pred_class:
-        return "match", "Rating and review are consistent"
+        return "match", "✅ Rating and review are consistent"
 
     if abs(expected - pred_class) == 1:
-        return "slight", "Slight mismatch between rating and review"
+        return "slight", "⚠️ Slight mismatch between rating and review"
 
-    return "strong", "Strong mismatch: rating contradicts review"
+    return "strong", "🚨 Strong mismatch: rating contradicts review"
 
 def explain_spam(review):
     reasons = []
@@ -155,10 +166,10 @@ if st.button("Clear History"):
 # ======================
 # INPUT
 # ======================
-review = st.text_area("Enter review")
-rating = st.slider("Rating", 1, 5, 4)
+review = st.text_area("✍️ Enter a review:")
+rating = st.slider("⭐ Rating", 1, 5, 4)
 
-if st.button("Analyze"):
+if st.button("🔍 Analyze"):
 
     if review.strip():
 
@@ -212,13 +223,13 @@ if st.button("Analyze"):
 # DISPLAY (FINAL UI)
 # ======================
 st.markdown("---")
-
+st.subheader("📋 Review Analysis")
 for item in reversed(st.session_state.history):
 
     # Review box
     st.markdown(f"""
     <div class="review-box">
-    {item['review']}
+    📝 {item['review']}
     </div>
     """, unsafe_allow_html=True)
 
@@ -243,7 +254,7 @@ for item in reversed(st.session_state.history):
         st.markdown(f"""
         <div class="card" style="text-align:center;">
             <div class="value">{item['spam_label']}</div>
-            <div class="caption">Spam Detection</div>
+            <div class="caption">🛡️ Spam Detection</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -252,7 +263,7 @@ for item in reversed(st.session_state.history):
         st.markdown(f"""
         <div class="card" style="text-align:center;">
             <div class="value">{item['trust_score']} / 5</div>
-            <div class="caption">Trust Score</div>
+            <div class="caption">🧠 Trust Score</div>
         </div>
         """, unsafe_allow_html=True)
 
