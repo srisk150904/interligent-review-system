@@ -41,17 +41,26 @@ label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
 
 
 def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
-    if(pred_class!=0 and percent-neutral_percent>10):
-        precent = percent - neutral_percent
-    else:
-        return "😐", "Neutral"
 
-    # Neutral dominance
-    if neutral_percent >= 60:
-        return "😐", "Strongly Neutral"
-    elif neutral_percent >= 40 and pred_class != 0:
-        return "😐", "Mixed / Slightly Neutral"
+    # ======================
+    # YOUR LOGIC (FIXED)
+    # ======================
+    if pred_class != 0:
+        diff = percent - neutral_percent
 
+        # Weak signal → Neutral
+        if diff <= 10:
+            return "😐", "Neutral"
+
+        # Strong signal → reduce confidence
+        percent = diff
+
+    # Clamp percent
+    percent = max(0, min(99, percent))
+
+    # ======================
+    # NORMAL LOGIC
+    # ======================
     if pred_class == 0:
         return "😐", "Neutral"
 
@@ -168,7 +177,7 @@ if st.button("🔍 Analyze"):
         )
 
         # ======================
-        # TRUST SCORE (CORE)
+        # TRUST SCORE
         # ======================
         sentiment_conf = percent / 100
         trust_score = (1 - spam_prob) * sentiment_conf
@@ -205,7 +214,6 @@ for item in reversed(st.session_state.history):
 
         st.markdown(f"### 📝 {item['review']}")
 
-        # METRICS
         col1, col2, col3 = st.columns(3)
 
         with col1:
@@ -217,7 +225,6 @@ for item in reversed(st.session_state.history):
         with col3:
             st.metric("🧠 Trust Score", f"{item['trust_score']:.2f}")
 
-        # TRUST INTERPRETATION
         if item["trust_score"] >= 0.75:
             st.success("✅ Highly Trustworthy Review")
         elif item["trust_score"] >= 0.5:
@@ -225,10 +232,8 @@ for item in reversed(st.session_state.history):
         else:
             st.error("🚨 Low Trust / Suspicious Review")
 
-        # SENTIMENT
         st.markdown(f"## {item['emoji']} {item['intensity']}")
 
-        # CONSISTENCY
         if item["mismatch_type"] == "match":
             st.success(item["mismatch_msg"])
         elif item["mismatch_type"] == "slight":
@@ -236,18 +241,15 @@ for item in reversed(st.session_state.history):
         else:
             st.error(item["mismatch_msg"])
 
-        # UNCERTAINTY
         if 0.4 <= item["spam_prob"] <= 0.7:
             st.info("🟡 Model uncertainty: borderline case")
 
-        # SPAM EXPLANATION
         reasons = explain_spam(item["review"])
         if reasons:
             st.warning("⚠️ Possible spam indicators:")
             for r in reasons:
                 st.write(f"- {r}")
 
-        # BREAKDOWN
         with st.expander("📊 Sentiment Breakdown"):
             for c, p in zip(sentiment_model.classes_, item["probs"]):
                 st.progress(float(p))
