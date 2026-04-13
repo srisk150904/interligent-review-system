@@ -22,11 +22,11 @@ body {
     border:1px solid #222;
 }
 .title {
-    font-size:14px;
+    font-size:13px;
     color:#9AA0A6;
 }
 .value {
-    font-size:26px;
+    font-size:20px;
     font-weight:600;
 }
 .caption {
@@ -86,33 +86,33 @@ def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
     if pred_class != 0:
         diff = percent - neutral_percent
         if diff <= 10:
-            return "", "Neutral", neutral_percent
+            return "😐", "Neutral", neutral_percent
         percent = diff
 
     percent = max(0, min(99, percent))
 
     if pred_class == 0:
-        return "", "Neutral", percent
+        return "😐", "Neutral", percent
 
     if pred_class == 1:
         if percent >= 96:
-            return "", "Extremely Positive", percent
+            return "🤩", "Extremely Positive", percent
         elif percent >= 87:
-            return "", "Very Positive", percent
+            return "😄", "Very Positive", percent
         elif percent >= 70:
-            return "", "Positive", percent
+            return "🙂", "Positive", percent
         else:
-            return "", "Slightly Positive", percent
+            return "😊", "Slightly Positive", percent
 
     if pred_class == -1:
         if percent >= 95:
-            return "", "Extremely Negative", percent
+            return "🤬", "Extremely Negative", percent
         elif percent >= 85:
-            return "", "Very Negative", percent
+            return "😠", "Very Negative", percent
         elif percent >= 70:
-            return "", "Negative", percent
+            return "😞", "Negative", percent
         else:
-            return "", "Slightly Negative", percent
+            return "😕", "Slightly Negative", percent
 
 def check_rating_sentiment_mismatch(rating, pred_class):
     if rating <= 2:
@@ -200,6 +200,7 @@ if st.button("Analyze"):
             "review": review,
             "spam_label": spam_label,
             "sentiment": adjusted_percent,
+            "emoji": emoji,
             "intensity": intensity_label,
             "trust_score": trust_score,
             "mismatch_type": mismatch_type,
@@ -208,13 +209,13 @@ if st.button("Analyze"):
         })
 
 # ======================
-# DISPLAY (UPDATED UI)
+# DISPLAY (FINAL UI)
 # ======================
 st.markdown("---")
 
 for item in reversed(st.session_state.history):
 
-    # Review
+    # Review box
     st.markdown(f"""
     <div class="review-box">
     {item['review']}
@@ -226,30 +227,32 @@ for item in reversed(st.session_state.history):
     # FLOW: Sentiment → Spam → Trust
     col1, col2, col3 = st.columns(3)
 
+    # SENTIMENT (UPDATED AS REQUESTED)
     with col1:
         st.markdown(f"""
-        <div class="card">
-            <div class="title">Sentiment</div>
-            <div class="value">{item['sentiment']}%</div>
-            <div class="caption">{item['intensity']}</div>
+        <div class="card" style="text-align:center;">
+            <div class="value">
+                {item['emoji']} {item['intensity']} ({item['sentiment']}%)
+            </div>
+            <div class="caption">Sentiment</div>
         </div>
         """, unsafe_allow_html=True)
 
+    # SPAM
     with col2:
         st.markdown(f"""
-        <div class="card">
-            <div class="title">Spam Check</div>
+        <div class="card" style="text-align:center;">
             <div class="value">{item['spam_label']}</div>
-            <div class="caption">Detection Result</div>
+            <div class="caption">Spam Detection</div>
         </div>
         """, unsafe_allow_html=True)
 
+    # TRUST
     with col3:
         st.markdown(f"""
-        <div class="card">
-            <div class="title">Trust Score</div>
+        <div class="card" style="text-align:center;">
             <div class="value">{item['trust_score']} / 5</div>
-            <div class="caption">Overall Reliability</div>
+            <div class="caption">Trust Score</div>
         </div>
         """, unsafe_allow_html=True)
 
