@@ -10,12 +10,12 @@ st.set_page_config(page_title="Trust-Aware Review Intelligence", layout="wide")
 st.title("🧠 Trust-Aware Review Intelligence System")
 
 st.markdown("""
-This system evaluates:
-- 🛡️ Spam likelihood  
-- 😊 Sentiment confidence  
-- ⭐ Rating consistency  
+Analyze reviews using:
+- 🛡️ Spam Detection  
+- 😊 Sentiment Analysis  
+- ⭐ Rating Consistency  
 
-👉 Combined into a **Trust Score** for reliable decision making
+👉 Combined into a **Trust Score**
 """)
 
 # ======================
@@ -43,46 +43,46 @@ label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
 def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
 
     # ======================
-    # YOUR LOGIC (FIXED)
+    # NEUTRAL ADJUSTMENT LOGIC
     # ======================
     if pred_class != 0:
         diff = percent - neutral_percent
 
         # Weak signal → Neutral
         if diff <= 10:
-            return "😐", "Neutral"
+            return "😐", "Neutral", neutral_percent
 
         # Strong signal → reduce confidence
         percent = diff
 
-    # Clamp percent
+    # Clamp
     percent = max(0, min(99, percent))
 
     # ======================
-    # NORMAL LOGIC
+    # LABELING
     # ======================
     if pred_class == 0:
-        return "😐", "Neutral"
+        return "😐", "Neutral", percent
 
     if pred_class == 1:
         if percent >= 96:
-            return "🤩", "Extremely Positive"
+            return "🤩", "Extremely Positive", percent
         elif percent >= 87:
-            return "😄", "Very Positive"
+            return "😄", "Very Positive", percent
         elif percent >= 70:
-            return "🙂", "Positive"
+            return "🙂", "Positive", percent
         else:
-            return "😊", "Slightly Positive"
+            return "😊", "Slightly Positive", percent
 
     if pred_class == -1:
         if percent >= 95:
-            return "🤬", "Extremely Negative"
+            return "🤬", "Extremely Negative", percent
         elif percent >= 85:
-            return "😠", "Very Negative"
+            return "😠", "Very Negative", percent
         elif percent >= 70:
-            return "😞", "Negative"
+            return "😞", "Negative", percent
         else:
-            return "😕", "Slightly Negative"
+            return "😕", "Slightly Negative", percent
 
 
 def check_rating_sentiment_mismatch(rating, pred_class):
@@ -159,7 +159,7 @@ if st.button("🔍 Analyze"):
         percent = min(99, int(round(pred_prob * 100)))
         neutral_percent = int(round(neu_prob * 100))
 
-        emoji, intensity_label = sentiment_emoji_and_label(
+        emoji, intensity_label, adjusted_percent = sentiment_emoji_and_label(
             sent_pred, percent, neutral_percent
         )
 
@@ -179,7 +179,7 @@ if st.button("🔍 Analyze"):
         # ======================
         # TRUST SCORE
         # ======================
-        sentiment_conf = percent / 100
+        sentiment_conf = adjusted_percent / 100
         trust_score = (1 - spam_prob) * sentiment_conf
 
         if mismatch_type == "strong":
@@ -193,7 +193,7 @@ if st.button("🔍 Analyze"):
         st.session_state.history.append({
             "review": review,
             "spam_prob": spam_prob,
-            "sentiment": percent,
+            "sentiment": adjusted_percent,
             "emoji": emoji,
             "intensity": intensity_label,
             "trust_score": trust_score,
@@ -225,6 +225,7 @@ for item in reversed(st.session_state.history):
         with col3:
             st.metric("🧠 Trust Score", f"{item['trust_score']:.2f}")
 
+        # Trust interpretation
         if item["trust_score"] >= 0.75:
             st.success("✅ Highly Trustworthy Review")
         elif item["trust_score"] >= 0.5:
@@ -232,8 +233,10 @@ for item in reversed(st.session_state.history):
         else:
             st.error("🚨 Low Trust / Suspicious Review")
 
+        # Sentiment
         st.markdown(f"## {item['emoji']} {item['intensity']}")
 
+        # Consistency
         if item["mismatch_type"] == "match":
             st.success(item["mismatch_msg"])
         elif item["mismatch_type"] == "slight":
@@ -241,15 +244,18 @@ for item in reversed(st.session_state.history):
         else:
             st.error(item["mismatch_msg"])
 
+        # Uncertainty
         if 0.4 <= item["spam_prob"] <= 0.7:
             st.info("🟡 Model uncertainty: borderline case")
 
+        # Spam explanation
         reasons = explain_spam(item["review"])
         if reasons:
             st.warning("⚠️ Possible spam indicators:")
             for r in reasons:
                 st.write(f"- {r}")
 
+        # Breakdown
         with st.expander("📊 Sentiment Breakdown"):
             for c, p in zip(sentiment_model.classes_, item["probs"]):
                 st.progress(float(p))
