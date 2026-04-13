@@ -41,6 +41,10 @@ label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
 
 
 def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
+    if(pred_class!=0 and percent-neutral_percent>10):
+        precent = percent - neutral_percent
+    else:
+        return "😐", "Neutral"
 
     # Neutral dominance
     if neutral_percent >= 60:
