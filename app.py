@@ -231,7 +231,7 @@ if st.button("🔍 Analyze"):
         raw_trust *= (0.8 + 0.2 * sentiment_conf)
 
         # Convert to 0–5 scale (safe clamp)
-        trust_score = min(5, convert_to_5_scale(raw_trust) + 0.73)
+        trust_score = round(min(5, convert_to_5_scale(raw_trust) + 0.73), 2)
 
         # ======================
         # SPAM LABEL
