@@ -5,10 +5,18 @@ import numpy as np
 # ======================
 # PAGE CONFIG
 # ======================
-st.set_page_config(page_title="AI Review Analyzer", layout="wide")
+st.set_page_config(page_title="Trust-Aware Review Intelligence", layout="wide")
 
-st.title("🧠 AI Review Intelligence System")
-st.markdown("Analyze reviews using **Spam Detection + Sentiment Analysis**")
+st.title("🧠 Trust-Aware Review Intelligence System")
+
+st.markdown("""
+This system evaluates:
+- 🛡️ Spam likelihood  
+- 😊 Sentiment confidence  
+- ⭐ Rating consistency  
+
+👉 Combined into a **Trust Score** for reliable decision making
+""")
 
 # ======================
 # LOAD MODELS
@@ -27,19 +35,18 @@ def load_models():
 spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer = load_models()
 
 # ======================
-# SENTIMENT HELPERS
+# HELPERS
 # ======================
-label_reverse_map = {
-    -1: "Negative",
-     0: "Neutral",
-     1: "Positive"
-}
+label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
+
 
 def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
-    if(pred_class!=0 and percent-neutral_percent>10):
-        precent = percent - neutral_percent
-    else:
-        return "😐", "Neutral"
+
+    # Neutral dominance
+    if neutral_percent >= 60:
+        return "😐", "Strongly Neutral"
+    elif neutral_percent >= 40 and pred_class != 0:
+        return "😐", "Mixed / Slightly Neutral"
 
     if pred_class == 0:
         return "😐", "Neutral"
@@ -64,9 +71,7 @@ def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
         else:
             return "😕", "Slightly Negative"
 
-# ======================
-# RATING vs SENTIMENT CHECK
-# ======================
+
 def check_rating_sentiment_mismatch(rating, pred_class):
 
     if rating <= 2:
@@ -83,6 +88,26 @@ def check_rating_sentiment_mismatch(rating, pred_class):
         return "slight", "⚠️ Slight mismatch between rating and review"
 
     return "strong", "🚨 Strong mismatch: rating contradicts review"
+
+
+def explain_spam(review):
+    reasons = []
+
+    if review.count("!") > 3:
+        reasons.append("Excessive exclamation marks")
+
+    words = review.lower().split()
+    if len(words) > 0 and len(set(words)) < len(words) * 0.6:
+        reasons.append("Repetitive words")
+
+    if any(word in review.lower() for word in ["buy", "offer", "click", "free"]):
+        reasons.append("Promotional language")
+
+    if len(words) < 5:
+        reasons.append("Very short / low information")
+
+    return reasons
+
 
 # ======================
 # SESSION STATE
@@ -104,78 +129,68 @@ if st.button("🔍 Analyze"):
     if review.strip():
 
         # ======================
-        # SENTIMENT MODEL (FIRST - FIXED)
+        # SENTIMENT
         # ======================
         tfidf = sentiment_vectorizer.transform([review.lower()])
 
         sent_pred = sentiment_model.predict(tfidf)[0]
         sent_prob = sentiment_model.predict_proba(tfidf)[0]
 
-        pred_prob = sent_prob[list(sentiment_model.classes_).index(sent_pred)]
+        class_indices = {c: i for i, c in enumerate(sentiment_model.classes_)}
+
+        neg_prob = sent_prob[class_indices[-1]]
+        neu_prob = sent_prob[class_indices[0]]
+        pos_prob = sent_prob[class_indices[1]]
+
+        pred_prob = sent_prob[class_indices[sent_pred]]
         percent = min(99, int(round(pred_prob * 100)))
         neutral_percent = int(round(neu_prob * 100))
 
         emoji, intensity_label = sentiment_emoji_and_label(
-            sent_pred,
-            percent,
-            neutral_percent
+            sent_pred, percent, neutral_percent
         )
 
         # ======================
-        # SPAM MODEL
+        # SPAM
         # ======================
         spam_tfidf = spam_vectorizer.transform([review])
         spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
 
         # ======================
-        # SMART WARNINGS
-        # ======================
-        if spam_prob > 0.75 and len(review.split()) > 20:
-            st.warning("⚠️ Long detailed review flagged — may be false positive")
-
-        if spam_prob > 0.75 and abs(sent_pred) == 1:
-            st.info("ℹ️ Strong sentiment may influence spam score")
-
-        if spam_prob > 0.8 and sent_pred == -1:
-            st.warning("⚠️ Negative reviews may be misclassified as spam")
-
-        # ======================
-        # SPAM LABEL
-        # ======================
-        if spam_prob >= 0.9:
-            spam_label = "🚨 Very Likely Spam"
-        elif spam_prob >= 0.8:
-            spam_label = "⚠️ Suspicious (review needed)"
-        elif spam_prob >= 0.5:
-            spam_label = "🟡 Possibly Genuine"
-        else:
-            spam_label = "✅ Likely Genuine"
-
-        # ======================
-        # RATING vs SENTIMENT
+        # CONSISTENCY
         # ======================
         mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
-            rating,
-            sent_pred
+            rating, sent_pred
         )
 
         # ======================
-        # STORE RESULT
+        # TRUST SCORE (CORE)
+        # ======================
+        sentiment_conf = percent / 100
+        trust_score = (1 - spam_prob) * sentiment_conf
+
+        if mismatch_type == "strong":
+            trust_score *= 0.7
+        elif mismatch_type == "slight":
+            trust_score *= 0.85
+
+        # ======================
+        # STORE
         # ======================
         st.session_state.history.append({
             "review": review,
             "spam_prob": spam_prob,
-            "spam_label": spam_label,
+            "sentiment": percent,
             "emoji": emoji,
             "intensity": intensity_label,
-            "percent": percent,
-            "probs": sent_prob,
+            "trust_score": trust_score,
             "mismatch_type": mismatch_type,
-            "mismatch_msg": mismatch_msg
+            "mismatch_msg": mismatch_msg,
+            "probs": sent_prob
         })
 
 # ======================
-# DISPLAY RESULTS
+# DISPLAY
 # ======================
 st.markdown("---")
 st.subheader("📋 Review Analysis")
@@ -186,14 +201,30 @@ for item in reversed(st.session_state.history):
 
         st.markdown(f"### 📝 {item['review']}")
 
-        # Spam
-        st.info(f"🛡️ Spam Risk: {item['spam_prob']:.2f}")
-        st.markdown(f"**{item['spam_label']}**")
+        # METRICS
+        col1, col2, col3 = st.columns(3)
 
-        # Sentiment
-        st.markdown(f"## {item['emoji']} {item['intensity']} ({item['percent']}%)")
+        with col1:
+            st.metric("🛡️ Spam Risk", f"{item['spam_prob']:.2f}")
 
-        # Rating consistency
+        with col2:
+            st.metric("😊 Sentiment", f"{item['sentiment']}%")
+
+        with col3:
+            st.metric("🧠 Trust Score", f"{item['trust_score']:.2f}")
+
+        # TRUST INTERPRETATION
+        if item["trust_score"] >= 0.75:
+            st.success("✅ Highly Trustworthy Review")
+        elif item["trust_score"] >= 0.5:
+            st.info("🟡 Moderately Trustworthy")
+        else:
+            st.error("🚨 Low Trust / Suspicious Review")
+
+        # SENTIMENT
+        st.markdown(f"## {item['emoji']} {item['intensity']}")
+
+        # CONSISTENCY
         if item["mismatch_type"] == "match":
             st.success(item["mismatch_msg"])
         elif item["mismatch_type"] == "slight":
@@ -201,7 +232,18 @@ for item in reversed(st.session_state.history):
         else:
             st.error(item["mismatch_msg"])
 
-        # Breakdown
+        # UNCERTAINTY
+        if 0.4 <= item["spam_prob"] <= 0.7:
+            st.info("🟡 Model uncertainty: borderline case")
+
+        # SPAM EXPLANATION
+        reasons = explain_spam(item["review"])
+        if reasons:
+            st.warning("⚠️ Possible spam indicators:")
+            for r in reasons:
+                st.write(f"- {r}")
+
+        # BREAKDOWN
         with st.expander("📊 Sentiment Breakdown"):
             for c, p in zip(sentiment_model.classes_, item["probs"]):
                 st.progress(float(p))
