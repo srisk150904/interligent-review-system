@@ -97,7 +97,7 @@ def get_spam_label(spam_prob):
         return "✅ Genuine"
     elif spam_prob < 0.6:
         return "🟡 Possibly Genuine"
-    elif spam_prob < 0.75:
+    elif spam_prob < 0.78:
         return "⚠️ Suspicious (Review Needed)"
     elif spam_prob < 0.9:
         return "🚨 Likely Spam"
@@ -279,7 +279,13 @@ for item in reversed(st.session_state.history):
         """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-
+    if item["trust_score"] < 2.2:
+        st.markdown("🚨 Low Trust / Suspicious Review")
+    elif item["trust_score"] <= 3:
+        st.markdown("🟡 Moderately Trustable Review")
+    else:
+        st.markdown("✅ Highly Trustworthy Review")
+    
     # Consistency
     if item["mismatch_type"] == "match":
         st.success(item["mismatch_msg"])
