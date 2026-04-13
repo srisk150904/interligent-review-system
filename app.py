@@ -93,7 +93,7 @@ def convert_to_5_scale(score):
     return round(scaled * 5, 2)
 
 def get_spam_label(spam_prob):
-    if spam_prob < 0.4:
+    if spam_prob < 0.4 or trust_score >= 4:
         return "✅ Genuine"
     elif spam_prob < 0.7 or trust_score > 3.2:
         return "🟡 Possibly Genuine"
