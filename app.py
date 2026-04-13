@@ -202,14 +202,12 @@ if st.button("🔍 Analyze"):
 
         spam_tfidf = spam_vectorizer.transform([review])
         spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
-        spam_label = get_spam_label(spam_prob, get_spam_label)
+        sentiment_conf = adjusted_percent / 100
+        raw_trust = (1 - spam_prob) * sentiment_conf
 
         mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
             rating, sent_pred
         )
-
-        sentiment_conf = adjusted_percent / 100
-        raw_trust = (1 - spam_prob) * sentiment_conf
 
         if mismatch_type == "strong":
             raw_trust *= 0.7
@@ -217,6 +215,7 @@ if st.button("🔍 Analyze"):
             raw_trust *= 0.85
 
         trust_score = convert_to_5_scale(raw_trust) + 0.4
+        spam_label = get_spam_label(spam_prob, trust_score)
 
         st.session_state.history.append({
             "review": review,
