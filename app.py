@@ -1,595 +1,595 @@
-import streamlit as st
-import joblib
-import numpy as np
-import pickle
-import faiss
-import torch
-from sentence_transformers import SentenceTransformer
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-
-# ======================
-# PAGE CONFIG
-# ======================
-st.set_page_config(layout="wide")
-
-# ======================
-# SIDEBAR NAVIGATION
-# ======================
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to:", [
-    "Trust Score System",
-    "RAG Review Q&A",
-    "Review Summarization"
-])
-
-# =========================================================
-# ====================== PAGE 1 =============================
-# =========================================================
-if page == "Trust Score System":
-
-    st.title("🧠 Trust-Aware Review Intelligence System")
-
-    st.markdown("""
-    Analyze reviews using:
-    - 🛡️ Spam Detection  
-    - 😊 Sentiment Analysis  
-    - ⭐ Rating Consistency  
-
-    👉 Combined into a **Trust Score (0–5 scale)**
-    """)
-
-    st.markdown("""
-    <style>
-    .card {
-        padding:16px;
-        border-radius:13px;
-        background:#1E222B;
-        border:1px solid #2A2F3A;
-    }
-    .value {
-        font-size:20px;
-        font-weight:600;
-    }
-    .caption {
-        font-size:15px;
-        color:#9AA0A6;
-    }
-    .review-box {
-        padding:16px;
-        border-radius:10px;
-        background:#111;
-        border:1px solid #222;
-        font-size:20px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # LOAD MODELS
-    @st.cache_resource
-    def load_models():
-        spam_model = joblib.load("spam_logreg_model.pkl")
-        spam_vectorizer = joblib.load("tfidf_vectorizer_spam.pkl")
-        sentiment_model = joblib.load("sentiment_lg_model.pkl")
-        sentiment_vectorizer = joblib.load("tfidf_vectorizer.pkl")
-        return spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer
-
-    spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer = load_models()
-
-    label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
-
-    def convert_to_5_scale(score):
-        return round((score ** 0.6) * 5, 2)
-
-    def get_spam_label(spam_prob, trust_score):
-        if spam_prob < 0.4 or trust_score >= 4:
-            return "✅ Genuine"
-        elif spam_prob < 0.7 or trust_score > 3.2:
-            return "🟡 Possibly Genuine"
-        elif spam_prob < 0.8:
-            return "⚠️ Suspicious (Review Needed)"
-        elif spam_prob < 0.9:
-            return "🚨 Likely Spam"
-        else:
-            return "🚨🚨 Very Likely Spam"
-
-    def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
-        if pred_class != 0:
-            diff = percent - neutral_percent
-            if diff <= 10:
-                return "😐", "Neutral", neutral_percent
-            percent = diff
-
-        percent = max(0, min(99, percent))
-
-        if pred_class == 0:
-            return "😐", "Neutral", percent
-
-        if pred_class == 1:
-            if percent >= 96:
-                return "🤩", "Extremely Positive", percent
-            elif percent >= 87:
-                return "😄", "Very Positive", percent
-            elif percent >= 70:
-                return "🙂", "Positive", percent
-            else:
-                return "😊", "Slightly Positive", percent
-
-        if pred_class == -1:
-            if percent >= 95:
-                return "🤬", "Extremely Negative", percent
-            elif percent >= 85:
-                return "😠", "Very Negative", percent
-            elif percent >= 70:
-                return "😞", "Negative", percent
-            else:
-                return "😕", "Slightly Negative", percent
-
-    def check_rating_sentiment_mismatch(rating, pred_class):
-        expected = -1 if rating <= 2 else (0 if rating == 3 else 1)
-        if expected == pred_class:
-            return "match", "✅ Rating and review are consistent"
-        if abs(expected - pred_class) == 1:
-            return "slight", "⚠️ Slight mismatch between rating and review"
-        return "strong", "🚨 Strong mismatch"
-
-    def explain_spam(review):
-        reasons = []
-        if review.count("!") > 3:
-            reasons.append("Excessive exclamation marks")
-        words = review.lower().split()
-        if len(set(words)) < len(words) * 0.6:
-            reasons.append("Repetitive words")
-        if any(w in review.lower() for w in ["buy", "offer", "click"]):
-            reasons.append("Promotional language")
-        return reasons
-
-    if "history" not in st.session_state:
-        st.session_state.history = []
-
-    review = st.text_area("Enter review")
-    rating = st.slider("Rating", 1, 5, 4)
-
-    if st.button("Analyze"):
-        tfidf = sentiment_vectorizer.transform([review.lower()])
-        sent_pred = sentiment_model.predict(tfidf)[0]
-        sent_prob = sentiment_model.predict_proba(tfidf)[0]
-
-        percent = int(max(sent_prob) * 100)
-        neutral_percent = int(sent_prob[0] * 100)
-
-        emoji, label, adj = sentiment_emoji_and_label(sent_pred, percent, neutral_percent)
-
-        spam_prob = spam_model.predict_proba(spam_vectorizer.transform([review]))[0][1]
-
-        raw_trust = (1 - spam_prob)
-        trust_score = convert_to_5_scale(raw_trust)
-
-        st.write("### Result")
-        st.write(label, adj, "%")
-        st.write("Trust Score:", trust_score)
-
-# =========================================================
-# ====================== PAGE 2 =============================
-# =========================================================
-elif page == "RAG Review Q&A":
-
-    st.title("🔍 Review Intelligence (RAG + LLM)")
-
-    @st.cache_resource
-    def load_rag():
-        index = faiss.read_index("faiss_index.bin")
-
-        with open("texts.pkl", "rb") as f:
-            texts = pickle.load(f)
-
-        with open("hotels.pkl", "rb") as f:
-            hotels = pickle.load(f)
-
-        embed_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
-
-        tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
-        model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-small")
-
-        return index, texts, hotels, embed_model, tokenizer, model
-
-    index, texts_sample, hotels_sample, embed_model, tokenizer, gen_model = load_rag()
-
-    def retrieve_reviews(query, hotel_filter=None, k=5):
-        vec = embed_model.encode([query])
-        D, I = index.search(vec, k * 10)
-
-        results = []
-        for idx in I[0]:
-            if hotel_filter:
-                if hotels_sample[idx] != hotel_filter:
-                    continue
-            results.append(texts_sample[idx])
-            if len(results) >= k:
-                break
-        return results
-
-    def generate_answer(query, reviews):
-        context = "\n".join(reviews)
-
-        prompt = f"""
-Summarize key issues from these hotel reviews in 2 short sentences.
-
-Reviews:
-{context}
-
-Answer:
-"""
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
-        out = gen_model.generate(**inputs, max_new_tokens=60)
-        return tokenizer.decode(out[0], skip_special_tokens=True)
-
-    query = st.text_input("Ask a question")
-    hotel = st.selectbox("Select Hotel", list(set(hotels_sample)))
-
-    if st.button("Run RAG"):
-        retrieved = retrieve_reviews(query, hotel)
-        answer = generate_answer(query, retrieved)
-
-        st.subheader("Retrieved Reviews")
-        for r in retrieved:
-            st.write("-", r)
-
-        st.subheader("Answer")
-        st.write(answer)
-
-# =========================================================
-# ====================== PAGE 3 =============================
-# =========================================================
-else:
-
-    st.title("📊 Review Summarization (Coming Soon)")
-
-    st.info("This page will generate full hotel insights using LLM + RAG.")
-
-    st.write("""
-Planned features:
-- Overall hotel summary
-- Top complaints
-- Strengths
-- Recommendation score
-""")
-
-
 # import streamlit as st
 # import joblib
 # import numpy as np
+# import pickle
+# import faiss
+# import torch
+# from sentence_transformers import SentenceTransformer
+# from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 # # ======================
 # # PAGE CONFIG
 # # ======================
 # st.set_page_config(layout="wide")
 
-# st.title("🧠 Trust-Aware Review Intelligence System")
-
-# st.markdown("""
-# Analyze reviews using:
-# - 🛡️ Spam Detection  
-# - 😊 Sentiment Analysis  
-# - ⭐ Rating Consistency  
-
-# 👉 Combined into a **Trust Score (0–5 scale)**
-# """)
-
 # # ======================
-# # CLEAN UI STYLES
+# # SIDEBAR NAVIGATION
 # # ======================
-# st.markdown("""
-# <style>
-# body {
-#     background-color: #0E1117;
-# }
-# .card {
-#     padding:16px;
-#     border-radius:13px;
-#     background:#1E222B;
-#     border:1px solid #2A2F3A;
-# }
-# .title {
-#     font-size:13px;
-#     color:#9AA0A6;
-# }
-# .value {
-#     font-size:20px;
-#     font-weight:600;
-# }
-# .caption {
-#     font-size:15px;
-#     color:#9AA0A6;
-# }
-# .review-box {
-#     padding:16px;
-#     border-radius:10px;
-#     background:#111;
-#     border:1px solid #222;
-#     font-size:20px;
-# }
-# /* Text area label */
-# div[data-testid="stTextArea"] label {
-#     font-size:20px !important;
-#     font-weight:600;
-# }
+# st.sidebar.title("Navigation")
+# page = st.sidebar.radio("Go to:", [
+#     "Trust Score System",
+#     "RAG Review Q&A",
+#     "Review Summarization"
+# ])
 
-# /* Slider label */
-# div[data-testid="stSlider"] label {
-#     font-size:19px !important;
-#     font-weight:600;
-# }
-# </style>
-# """, unsafe_allow_html=True)
+# # =========================================================
+# # ====================== PAGE 1 =============================
+# # =========================================================
+# if page == "Trust Score System":
 
-# # st.title("Trust-Aware Review Intelligence")
+#     st.title("🧠 Trust-Aware Review Intelligence System")
 
-# # ======================
-# # LOAD MODELS
-# # ======================
-# @st.cache_resource
-# def load_models():
-#     spam_model = joblib.load("spam_logreg_model.pkl")
-#     spam_vectorizer = joblib.load("tfidf_vectorizer_spam.pkl")
+#     st.markdown("""
+#     Analyze reviews using:
+#     - 🛡️ Spam Detection  
+#     - 😊 Sentiment Analysis  
+#     - ⭐ Rating Consistency  
 
-#     sentiment_model = joblib.load("sentiment_lg_model.pkl")
-#     sentiment_vectorizer = joblib.load("tfidf_vectorizer.pkl")
+#     👉 Combined into a **Trust Score (0–5 scale)**
+#     """)
 
-#     return spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer
+#     st.markdown("""
+#     <style>
+#     .card {
+#         padding:16px;
+#         border-radius:13px;
+#         background:#1E222B;
+#         border:1px solid #2A2F3A;
+#     }
+#     .value {
+#         font-size:20px;
+#         font-weight:600;
+#     }
+#     .caption {
+#         font-size:15px;
+#         color:#9AA0A6;
+#     }
+#     .review-box {
+#         padding:16px;
+#         border-radius:10px;
+#         background:#111;
+#         border:1px solid #222;
+#         font-size:20px;
+#     }
+#     </style>
+#     """, unsafe_allow_html=True)
 
+#     # LOAD MODELS
+#     @st.cache_resource
+#     def load_models():
+#         spam_model = joblib.load("spam_logreg_model.pkl")
+#         spam_vectorizer = joblib.load("tfidf_vectorizer_spam.pkl")
+#         sentiment_model = joblib.load("sentiment_lg_model.pkl")
+#         sentiment_vectorizer = joblib.load("tfidf_vectorizer.pkl")
+#         return spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer
 
-# spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer = load_models()
+#     spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer = load_models()
 
-# # ======================
-# # HELPERS (UNCHANGED)
-# # ======================
-# label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
+#     label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
 
-# def convert_to_5_scale(score):
-#     scaled = score ** 0.6
-#     return round(scaled * 5, 2)
+#     def convert_to_5_scale(score):
+#         return round((score ** 0.6) * 5, 2)
 
-# def get_spam_label(spam_prob, trust_score):
-#     if spam_prob < 0.4 or trust_score >= 4:
-#         return "✅ Genuine"
-#     elif spam_prob < 0.7 or trust_score > 3.2:
-#         return "🟡 Possibly Genuine"
-#     elif spam_prob < 0.8:
-#         return "⚠️ Suspicious (Review Needed)"
-#     elif spam_prob < 0.9:
-#         return "🚨 Likely Spam"
-#     else:
-#         return "🚨🚨 Very Likely Spam"
-
-# def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
-#     if pred_class != 0:
-#         diff = percent - neutral_percent
-#         if diff <= 10:
-#             return "😐", "Neutral", neutral_percent
-#         percent = diff
-
-#     percent = max(0, min(99, percent))
-
-#     if pred_class == 0:
-#         return "😐", "Neutral", percent
-
-#     if pred_class == 1:
-#         if percent >= 96:
-#             return "🤩", "Extremely Positive", percent
-#         elif percent >= 87:
-#             return "😄", "Very Positive", percent
-#         elif percent >= 70:
-#             return "🙂", "Positive", percent
+#     def get_spam_label(spam_prob, trust_score):
+#         if spam_prob < 0.4 or trust_score >= 4:
+#             return "✅ Genuine"
+#         elif spam_prob < 0.7 or trust_score > 3.2:
+#             return "🟡 Possibly Genuine"
+#         elif spam_prob < 0.8:
+#             return "⚠️ Suspicious (Review Needed)"
+#         elif spam_prob < 0.9:
+#             return "🚨 Likely Spam"
 #         else:
-#             return "😊", "Slightly Positive", percent
+#             return "🚨🚨 Very Likely Spam"
 
-#     if pred_class == -1:
-#         if percent >= 95:
-#             return "🤬", "Extremely Negative", percent
-#         elif percent >= 85:
-#             return "😠", "Very Negative", percent
-#         elif percent >= 70:
-#             return "😞", "Negative", percent
-#         else:
-#             return "😕", "Slightly Negative", percent
+#     def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
+#         if pred_class != 0:
+#             diff = percent - neutral_percent
+#             if diff <= 10:
+#                 return "😐", "Neutral", neutral_percent
+#             percent = diff
 
-# def check_rating_sentiment_mismatch(rating, pred_class):
-#     if rating <= 2:
-#         expected = -1
-#     elif rating == 3:
-#         expected = 0
-#     else:
-#         expected = 1
+#         percent = max(0, min(99, percent))
 
-#     if expected == pred_class:
-#         return "match", "✅ Rating and review are consistent"
+#         if pred_class == 0:
+#             return "😐", "Neutral", percent
 
-#     if abs(expected - pred_class) == 1:
-#         return "slight", "⚠️ Slight mismatch between rating and review"
+#         if pred_class == 1:
+#             if percent >= 96:
+#                 return "🤩", "Extremely Positive", percent
+#             elif percent >= 87:
+#                 return "😄", "Very Positive", percent
+#             elif percent >= 70:
+#                 return "🙂", "Positive", percent
+#             else:
+#                 return "😊", "Slightly Positive", percent
 
-#     return "strong", "🚨 Strong mismatch: rating contradicts review"
+#         if pred_class == -1:
+#             if percent >= 95:
+#                 return "🤬", "Extremely Negative", percent
+#             elif percent >= 85:
+#                 return "😠", "Very Negative", percent
+#             elif percent >= 70:
+#                 return "😞", "Negative", percent
+#             else:
+#                 return "😕", "Slightly Negative", percent
 
-# def explain_spam(review):
-#     reasons = []
-#     if review.count("!") > 3:
-#         reasons.append("Excessive exclamation marks")
-#     words = review.lower().split()
-#     if len(words) > 0 and len(set(words)) < len(words) * 0.6:
-#         reasons.append("Repetitive words")
-#     if any(word in review.lower() for word in ["buy", "offer", "click", "free"]):
-#         reasons.append("Promotional language")
-#     if len(words) < 5:
-#         reasons.append("Very short / low information")
-#     return reasons
+#     def check_rating_sentiment_mismatch(rating, pred_class):
+#         expected = -1 if rating <= 2 else (0 if rating == 3 else 1)
+#         if expected == pred_class:
+#             return "match", "✅ Rating and review are consistent"
+#         if abs(expected - pred_class) == 1:
+#             return "slight", "⚠️ Slight mismatch between rating and review"
+#         return "strong", "🚨 Strong mismatch"
 
-# # ======================
-# # SESSION STATE
-# # ======================
-# if "history" not in st.session_state:
-#     st.session_state.history = []
+#     def explain_spam(review):
+#         reasons = []
+#         if review.count("!") > 3:
+#             reasons.append("Excessive exclamation marks")
+#         words = review.lower().split()
+#         if len(set(words)) < len(words) * 0.6:
+#             reasons.append("Repetitive words")
+#         if any(w in review.lower() for w in ["buy", "offer", "click"]):
+#             reasons.append("Promotional language")
+#         return reasons
 
-# if st.button("Clear History"):
-#     st.session_state.history = []
+#     if "history" not in st.session_state:
+#         st.session_state.history = []
 
-# # ======================
-# # INPUT
-# # ======================
-# review = st.text_area("✍️ Enter a review:")
-# rating = st.slider("⭐ Rating", 1, 5, 4)
+#     review = st.text_area("Enter review")
+#     rating = st.slider("Rating", 1, 5, 4)
 
-# if st.button("🔍 Analyze"):
-
-#     if review.strip():
-
+#     if st.button("Analyze"):
 #         tfidf = sentiment_vectorizer.transform([review.lower()])
 #         sent_pred = sentiment_model.predict(tfidf)[0]
 #         sent_prob = sentiment_model.predict_proba(tfidf)[0]
 
-#         class_indices = {c: i for i, c in enumerate(sentiment_model.classes_)}
-#         neg_prob = sent_prob[class_indices[-1]]
-#         neu_prob = sent_prob[class_indices[0]]
+#         percent = int(max(sent_prob) * 100)
+#         neutral_percent = int(sent_prob[0] * 100)
 
-#         pred_prob = sent_prob[class_indices[sent_pred]]
-#         percent = min(99, int(round(pred_prob * 100)))
-#         neutral_percent = int(round(neu_prob * 100))
+#         emoji, label, adj = sentiment_emoji_and_label(sent_pred, percent, neutral_percent)
 
-#         emoji, intensity_label, adjusted_percent = sentiment_emoji_and_label(
-#             sent_pred, percent, neutral_percent
-#         )
+#         spam_prob = spam_model.predict_proba(spam_vectorizer.transform([review]))[0][1]
 
-#         # ======================
-#         # SPAM
-#         # ======================
-#         spam_tfidf = spam_vectorizer.transform([review])
-#         spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
-
-#         # ======================
-#         # MISMATCH
-#         # ======================
-#         mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
-#             rating, sent_pred
-#         )
-
-#         # ======================
-#         # TRUST (UPDATED LOGIC)
-#         # ======================
-#         sentiment_conf = adjusted_percent / 100
-
-#         # Base trust from spam ONLY
 #         raw_trust = (1 - spam_prob)
+#         trust_score = convert_to_5_scale(raw_trust)
 
-#         # Penalize mismatch strongly
-#         if mismatch_type == "strong":
-#             raw_trust *= 0.6
-#         elif mismatch_type == "slight":
-#             raw_trust *= 0.85
+#         st.write("### Result")
+#         st.write(label, adj, "%")
+#         st.write("Trust Score:", trust_score)
 
-#         # Small confidence adjustment (not dominance)
-#         raw_trust *= (0.8 + 0.2 * sentiment_conf)
+# # =========================================================
+# # ====================== PAGE 2 =============================
+# # =========================================================
+# elif page == "RAG Review Q&A":
 
-#         # Convert to 0–5 scale (safe clamp)
-#         trust_score = round(min(5, convert_to_5_scale(raw_trust) + 0.73), 2)
+#     st.title("🔍 Review Intelligence (RAG + LLM)")
 
-#         # ======================
-#         # SPAM LABEL
-#         # ======================
-#         spam_label = get_spam_label(spam_prob, trust_score)
+#     @st.cache_resource
+#     def load_rag():
+#         index = faiss.read_index("faiss_index.bin")
 
-#         # ======================
-#         # STORE
-#         # ======================
-#         st.session_state.history.append({
-#             "review": review,
-#             "spam_label": spam_label,
-#             "sentiment": adjusted_percent,
-#             "emoji": emoji,
-#             "intensity": intensity_label,
-#             "trust_score": trust_score,
-#             "mismatch_type": mismatch_type,
-#             "mismatch_msg": mismatch_msg,
-#             "probs": sent_prob
-#         })
+#         with open("texts.pkl", "rb") as f:
+#             texts = pickle.load(f)
 
-# # ======================
-# # DISPLAY (FINAL UI)
-# # ======================
-# st.markdown("---")
-# st.subheader("📋 Review Analysis")
-# for item in reversed(st.session_state.history):
+#         with open("hotels.pkl", "rb") as f:
+#             hotels = pickle.load(f)
 
-#     # Review box
-#     st.markdown(f"""
-#     <div class="review-box">
-#     📝 {item['review']}
-#     </div>
-#     """, unsafe_allow_html=True)
+#         embed_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 
-#     st.markdown("<br>", unsafe_allow_html=True)
+#         tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
+#         model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-small")
 
-#     # FLOW: Sentiment → Spam → Trust
-#     col1, col2, col3 = st.columns(3)
+#         return index, texts, hotels, embed_model, tokenizer, model
 
-#     # SENTIMENT (UPDATED AS REQUESTED)
-#     with col1:
-#         st.markdown(f"""
-#         <div class="card" style="text-align:center;">
-#             <div class="value">
-#                 {item['emoji']} {item['intensity']} ({item['sentiment']}%)
-#             </div>
-#             <div class="caption">😊 Sentiment</div>
-#         </div>
-#         """, unsafe_allow_html=True)
+#     index, texts_sample, hotels_sample, embed_model, tokenizer, gen_model = load_rag()
 
-#     # SPAM
-#     with col2:
-#         st.markdown(f"""
-#         <div class="card" style="text-align:center;">
-#             <div class="value">{item['spam_label']}</div>
-#             <div class="caption">🛡️ Spam Detection</div>
-#         </div>
-#         """, unsafe_allow_html=True)
+#     def retrieve_reviews(query, hotel_filter=None, k=5):
+#         vec = embed_model.encode([query])
+#         D, I = index.search(vec, k * 10)
 
-#     # TRUST
-#     with col3:
-#         st.markdown(f"""
-#         <div class="card" style="text-align:center;">
-#             <div class="value">{item['trust_score']} / 5</div>
-#             <div class="caption">🧠 Trust Score</div>
-#         </div>
-#         """, unsafe_allow_html=True)
+#         results = []
+#         for idx in I[0]:
+#             if hotel_filter:
+#                 if hotels_sample[idx] != hotel_filter:
+#                     continue
+#             results.append(texts_sample[idx])
+#             if len(results) >= k:
+#                 break
+#         return results
 
-#     st.markdown("<br>", unsafe_allow_html=True)
-#     if item["trust_score"] < 2.2:
-#         st.markdown("🚨 Low Trust / Suspicious Review")
-#     elif item["trust_score"] < 3:
-#         st.markdown("🟡 Moderately Trustable Review")
-#     elif item["trust_score"] < 4:
-#         st.markdown("✅ Highly Trustworthy Review")
-#     else:
-#         st.markdown("✅✅ Highly Trustworthy Review")
+#     def generate_answer(query, reviews):
+#         context = "\n".join(reviews)
+
+#         prompt = f"""
+# Summarize key issues from these hotel reviews in 2 short sentences.
+
+# Reviews:
+# {context}
+
+# Answer:
+# """
+#         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+#         out = gen_model.generate(**inputs, max_new_tokens=60)
+#         return tokenizer.decode(out[0], skip_special_tokens=True)
+
+#     query = st.text_input("Ask a question")
+#     hotel = st.selectbox("Select Hotel", list(set(hotels_sample)))
+
+#     if st.button("Run RAG"):
+#         retrieved = retrieve_reviews(query, hotel)
+#         answer = generate_answer(query, retrieved)
+
+#         st.subheader("Retrieved Reviews")
+#         for r in retrieved:
+#             st.write("-", r)
+
+#         st.subheader("Answer")
+#         st.write(answer)
+
+# # =========================================================
+# # ====================== PAGE 3 =============================
+# # =========================================================
+# else:
+
+#     st.title("📊 Review Summarization (Coming Soon)")
+
+#     st.info("This page will generate full hotel insights using LLM + RAG.")
+
+#     st.write("""
+# Planned features:
+# - Overall hotel summary
+# - Top complaints
+# - Strengths
+# - Recommendation score
+# """)
+
+
+import streamlit as st
+import joblib
+import numpy as np
+
+# ======================
+# PAGE CONFIG
+# ======================
+st.set_page_config(layout="wide")
+
+st.title("🧠 Trust-Aware Review Intelligence System")
+
+st.markdown("""
+Analyze reviews using:
+- 🛡️ Spam Detection  
+- 😊 Sentiment Analysis  
+- ⭐ Rating Consistency  
+
+👉 Combined into a **Trust Score (0–5 scale)**
+""")
+
+# ======================
+# CLEAN UI STYLES
+# ======================
+st.markdown("""
+<style>
+body {
+    background-color: #0E1117;
+}
+.card {
+    padding:16px;
+    border-radius:13px;
+    background:#1E222B;
+    border:1px solid #2A2F3A;
+}
+.title {
+    font-size:13px;
+    color:#9AA0A6;
+}
+.value {
+    font-size:20px;
+    font-weight:600;
+}
+.caption {
+    font-size:15px;
+    color:#9AA0A6;
+}
+.review-box {
+    padding:16px;
+    border-radius:10px;
+    background:#111;
+    border:1px solid #222;
+    font-size:20px;
+}
+/* Text area label */
+div[data-testid="stTextArea"] label {
+    font-size:20px !important;
+    font-weight:600;
+}
+
+/* Slider label */
+div[data-testid="stSlider"] label {
+    font-size:19px !important;
+    font-weight:600;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# st.title("Trust-Aware Review Intelligence")
+
+# ======================
+# LOAD MODELS
+# ======================
+@st.cache_resource
+def load_models():
+    spam_model = joblib.load("spam_logreg_model.pkl")
+    spam_vectorizer = joblib.load("tfidf_vectorizer_spam.pkl")
+
+    sentiment_model = joblib.load("sentiment_lg_model.pkl")
+    sentiment_vectorizer = joblib.load("tfidf_vectorizer.pkl")
+
+    return spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer
+
+
+spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer = load_models()
+
+# ======================
+# HELPERS (UNCHANGED)
+# ======================
+label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
+
+def convert_to_5_scale(score):
+    scaled = score ** 0.6
+    return round(scaled * 5, 2)
+
+def get_spam_label(spam_prob, trust_score):
+    if spam_prob < 0.4 or trust_score >= 4:
+        return "✅ Genuine"
+    elif spam_prob < 0.7 or trust_score > 3.2:
+        return "🟡 Possibly Genuine"
+    elif spam_prob < 0.8:
+        return "⚠️ Suspicious (Review Needed)"
+    elif spam_prob < 0.9:
+        return "🚨 Likely Spam"
+    else:
+        return "🚨🚨 Very Likely Spam"
+
+def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
+    if pred_class != 0:
+        diff = percent - neutral_percent
+        if diff <= 10:
+            return "😐", "Neutral", neutral_percent
+        percent = diff
+
+    percent = max(0, min(99, percent))
+
+    if pred_class == 0:
+        return "😐", "Neutral", percent
+
+    if pred_class == 1:
+        if percent >= 96:
+            return "🤩", "Extremely Positive", percent
+        elif percent >= 87:
+            return "😄", "Very Positive", percent
+        elif percent >= 70:
+            return "🙂", "Positive", percent
+        else:
+            return "😊", "Slightly Positive", percent
+
+    if pred_class == -1:
+        if percent >= 95:
+            return "🤬", "Extremely Negative", percent
+        elif percent >= 85:
+            return "😠", "Very Negative", percent
+        elif percent >= 70:
+            return "😞", "Negative", percent
+        else:
+            return "😕", "Slightly Negative", percent
+
+def check_rating_sentiment_mismatch(rating, pred_class):
+    if rating <= 2:
+        expected = -1
+    elif rating == 3:
+        expected = 0
+    else:
+        expected = 1
+
+    if expected == pred_class:
+        return "match", "✅ Rating and review are consistent"
+
+    if abs(expected - pred_class) == 1:
+        return "slight", "⚠️ Slight mismatch between rating and review"
+
+    return "strong", "🚨 Strong mismatch: rating contradicts review"
+
+def explain_spam(review):
+    reasons = []
+    if review.count("!") > 3:
+        reasons.append("Excessive exclamation marks")
+    words = review.lower().split()
+    if len(words) > 0 and len(set(words)) < len(words) * 0.6:
+        reasons.append("Repetitive words")
+    if any(word in review.lower() for word in ["buy", "offer", "click", "free"]):
+        reasons.append("Promotional language")
+    if len(words) < 5:
+        reasons.append("Very short / low information")
+    return reasons
+
+# ======================
+# SESSION STATE
+# ======================
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+if st.button("Clear History"):
+    st.session_state.history = []
+
+# ======================
+# INPUT
+# ======================
+review = st.text_area("✍️ Enter a review:")
+rating = st.slider("⭐ Rating", 1, 5, 4)
+
+if st.button("🔍 Analyze"):
+
+    if review.strip():
+
+        tfidf = sentiment_vectorizer.transform([review.lower()])
+        sent_pred = sentiment_model.predict(tfidf)[0]
+        sent_prob = sentiment_model.predict_proba(tfidf)[0]
+
+        class_indices = {c: i for i, c in enumerate(sentiment_model.classes_)}
+        neg_prob = sent_prob[class_indices[-1]]
+        neu_prob = sent_prob[class_indices[0]]
+
+        pred_prob = sent_prob[class_indices[sent_pred]]
+        percent = min(99, int(round(pred_prob * 100)))
+        neutral_percent = int(round(neu_prob * 100))
+
+        emoji, intensity_label, adjusted_percent = sentiment_emoji_and_label(
+            sent_pred, percent, neutral_percent
+        )
+
+        # ======================
+        # SPAM
+        # ======================
+        spam_tfidf = spam_vectorizer.transform([review])
+        spam_prob = float(spam_model.predict_proba(spam_tfidf)[0][1])
+
+        # ======================
+        # MISMATCH
+        # ======================
+        mismatch_type, mismatch_msg = check_rating_sentiment_mismatch(
+            rating, sent_pred
+        )
+
+        # ======================
+        # TRUST (UPDATED LOGIC)
+        # ======================
+        sentiment_conf = adjusted_percent / 100
+
+        # Base trust from spam ONLY
+        raw_trust = (1 - spam_prob)
+
+        # Penalize mismatch strongly
+        if mismatch_type == "strong":
+            raw_trust *= 0.6
+        elif mismatch_type == "slight":
+            raw_trust *= 0.85
+
+        # Small confidence adjustment (not dominance)
+        raw_trust *= (0.8 + 0.2 * sentiment_conf)
+
+        # Convert to 0–5 scale (safe clamp)
+        trust_score = round(min(5, convert_to_5_scale(raw_trust) + 0.73), 2)
+
+        # ======================
+        # SPAM LABEL
+        # ======================
+        spam_label = get_spam_label(spam_prob, trust_score)
+
+        # ======================
+        # STORE
+        # ======================
+        st.session_state.history.append({
+            "review": review,
+            "spam_label": spam_label,
+            "sentiment": adjusted_percent,
+            "emoji": emoji,
+            "intensity": intensity_label,
+            "trust_score": trust_score,
+            "mismatch_type": mismatch_type,
+            "mismatch_msg": mismatch_msg,
+            "probs": sent_prob
+        })
+
+# ======================
+# DISPLAY (FINAL UI)
+# ======================
+st.markdown("---")
+st.subheader("📋 Review Analysis")
+for item in reversed(st.session_state.history):
+
+    # Review box
+    st.markdown(f"""
+    <div class="review-box">
+    📝 {item['review']}
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # FLOW: Sentiment → Spam → Trust
+    col1, col2, col3 = st.columns(3)
+
+    # SENTIMENT (UPDATED AS REQUESTED)
+    with col1:
+        st.markdown(f"""
+        <div class="card" style="text-align:center;">
+            <div class="value">
+                {item['emoji']} {item['intensity']} ({item['sentiment']}%)
+            </div>
+            <div class="caption">😊 Sentiment</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # SPAM
+    with col2:
+        st.markdown(f"""
+        <div class="card" style="text-align:center;">
+            <div class="value">{item['spam_label']}</div>
+            <div class="caption">🛡️ Spam Detection</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # TRUST
+    with col3:
+        st.markdown(f"""
+        <div class="card" style="text-align:center;">
+            <div class="value">{item['trust_score']} / 5</div>
+            <div class="caption">🧠 Trust Score</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if item["trust_score"] < 2.2:
+        st.markdown("🚨 Low Trust / Suspicious Review")
+    elif item["trust_score"] < 3:
+        st.markdown("🟡 Moderately Trustable Review")
+    elif item["trust_score"] < 4:
+        st.markdown("✅ Highly Trustworthy Review")
+    else:
+        st.markdown("✅✅ Highly Trustworthy Review")
     
-#     # Consistency
-#     if item["mismatch_type"] == "match":
-#         st.success(item["mismatch_msg"])
-#     elif item["mismatch_type"] == "slight":
-#         st.warning(item["mismatch_msg"])
-#     else:
-#         st.error(item["mismatch_msg"])
+    # Consistency
+    if item["mismatch_type"] == "match":
+        st.success(item["mismatch_msg"])
+    elif item["mismatch_type"] == "slight":
+        st.warning(item["mismatch_msg"])
+    else:
+        st.error(item["mismatch_msg"])
 
-#     # Spam reasons
-#     reasons = explain_spam(item["review"])
-#     if reasons:
-#         with st.expander("Details"):
-#             for r in reasons:
-#                 st.write(f"- {r}")
+    # Spam reasons
+    reasons = explain_spam(item["review"])
+    if reasons:
+        with st.expander("Details"):
+            for r in reasons:
+                st.write(f"- {r}")
 
-#     # Sentiment breakdown
-#     with st.expander("📊 Sentiment Breakdown"):
-#             for c, p in zip(sentiment_model.classes_, item["probs"]):
-#                 st.progress(float(p))
-#                 st.write(f"{label_reverse_map[c]}: {p*100:.1f}%")
+    # Sentiment breakdown
+    with st.expander("📊 Sentiment Breakdown"):
+            for c, p in zip(sentiment_model.classes_, item["probs"]):
+                st.progress(float(p))
+                st.write(f"{label_reverse_map[c]}: {p*100:.1f}%")
 
-#     st.markdown("---")
+    st.markdown("---")
 
 
 
