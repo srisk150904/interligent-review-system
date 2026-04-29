@@ -351,11 +351,11 @@ else:
         unique_hotels
     )
 
-    review_count = st.selectbox(
-        "Number of Reviews to Summarize",
-        [10, 15, 20, 30],
-        index=1
-    )
+    # review_count = st.selectbox(
+    #     "Number of Reviews to Summarize",
+    #     [10, 15, 20, 30],
+    #     index=1
+    # )
 
     if st.button("Generate Summary"):
 
@@ -363,7 +363,7 @@ else:
 
             selected_reviews = get_hotel_reviews(
                 selected_hotel,
-                top_n=review_count
+                top_n=15
             )
 
             summary = generate_summary(selected_reviews)
