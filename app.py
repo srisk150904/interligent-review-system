@@ -314,6 +314,7 @@ else:
     - Mention room quality, staff behavior, cleanliness, facilities, overall experience etc
     - Keep the answer clear, and human-like
     Write 3–4 clear, grammatically correct sentences.
+    Ensure proper grammar, punctuations, flow of each sentence is maintained.
     Reviews:
     {context}
     
