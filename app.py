@@ -242,18 +242,399 @@ Answer:
 # =========================================================
 else:
 
-    st.title("📊 Review Summarization (Coming Soon)")
+    st.title("📊 Review Summarization")
 
-    st.info("This page will generate full hotel insights using LLM + RAG.")
+    st.markdown("""
+    Generate an overall summary of customer opinions for a selected hotel.
 
-    st.write("""
-Planned features:
-- Overall hotel summary
-- Top complaints
-- Strengths
-- Recommendation score
-""")
+    Features:
+    - Top positive observations
+    - Common complaints
+    - Overall customer experience
+    - Quick decision support
+    """)
 
+    # Reuse models loaded from Page 2
+    @st.cache_resource
+    def load_summary_models():
+        index = faiss.read_index("faiss_index.bin")
+
+        with open("texts.pkl", "rb") as f:
+            texts = pickle.load(f)
+
+        with open("hotels.pkl", "rb") as f:
+            hotels = pickle.load(f)
+
+        tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
+        model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-small")
+
+        return index, texts, hotels, tokenizer, model
+
+    index, texts_sample, hotels_sample, tokenizer, gen_model = load_summary_models()
+
+    # -----------------------------
+    # Get reviews for selected hotel
+    # -----------------------------
+    def get_hotel_reviews(selected_hotel, top_n=15):
+        hotel_reviews = []
+
+        for review, hotel in zip(texts_sample, hotels_sample):
+            if hotel == selected_hotel:
+                if len(review.strip()) > 20:  # avoid very short noisy reviews
+                    hotel_reviews.append(review)
+
+            if len(hotel_reviews) >= top_n:
+                break
+
+        return hotel_reviews
+
+    # -----------------------------
+    # Generate summary using FLAN-T5
+    # -----------------------------
+    def generate_summary(reviews):
+        if not reviews:
+            return "No sufficient reviews found for summarization."
+
+        context = "\n".join(reviews)
+
+        prompt = f"""
+Summarize the following hotel reviews in a concise and structured way.
+
+Focus on:
+1. Common positive points
+2. Common complaints
+3. Overall customer experience
+
+Reviews:
+{context}
+
+Summary:
+"""
+
+        inputs = tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=512
+        )
+
+        output = gen_model.generate(
+            **inputs,
+            max_new_tokens=150,
+            no_repeat_ngram_size=3,
+            temperature=0.7
+        )
+
+        summary = tokenizer.decode(output[0], skip_special_tokens=True)
+        return summary
+
+    # -----------------------------
+    # UI Inputs
+    # -----------------------------
+    unique_hotels = sorted(list(set(hotels_sample)))
+
+    selected_hotel = st.selectbox(
+        "Select Hotel for Summary",
+        unique_hotels
+    )
+
+    review_count = st.selectbox(
+        "Number of Reviews to Summarize",
+        [10, 15, 20, 30],
+        index=1
+    )
+
+    if st.button("Generate Summary"):
+
+        with st.spinner("Generating hotel summary..."):
+
+            selected_reviews = get_hotel_reviews(
+                selected_hotel,
+                top_n=review_count
+            )
+
+            summary = generate_summary(selected_reviews)
+
+        # -----------------------------
+        # Display Retrieved Reviews
+        # -----------------------------
+        st.subheader("Retrieved Reviews Used for Summary")
+
+        for i, review in enumerate(selected_reviews, 1):
+            st.markdown(f"**{i}.** {review}")
+
+        # -----------------------------
+        # Display Final Summary
+        # -----------------------------
+        st.subheader("Hotel Summary")
+
+        st.success(summary)
+
+
+
+# import streamlit as st
+# import joblib
+# import numpy as np
+# import pickle
+# import faiss
+# import torch
+# from sentence_transformers import SentenceTransformer
+# from transformers import T5Tokenizer, T5ForConditionalGeneration
+
+# # ======================
+# # PAGE CONFIG
+# # ======================
+# st.set_page_config(layout="wide")
+
+# # ======================
+# # SIDEBAR NAVIGATION
+# # ======================
+# st.sidebar.title("Navigation")
+# page = st.sidebar.radio("Go to:", [
+#     "Trust Score System",
+#     "RAG Review Q&A",
+#     "Review Summarization"
+# ])
+
+# # =========================================================
+# # ====================== PAGE 1 =============================
+# # =========================================================
+# if page == "Trust Score System":
+
+#     st.title("🧠 Trust-Aware Review Intelligence System")
+
+#     st.markdown("""
+#     Analyze reviews using:
+#     - 🛡️ Spam Detection  
+#     - 😊 Sentiment Analysis  
+#     - ⭐ Rating Consistency  
+
+#     👉 Combined into a **Trust Score (0–5 scale)**
+#     """)
+
+#     st.markdown("""
+#     <style>
+#     .card {
+#         padding:16px;
+#         border-radius:13px;
+#         background:#1E222B;
+#         border:1px solid #2A2F3A;
+#     }
+#     .value {
+#         font-size:20px;
+#         font-weight:600;
+#     }
+#     .caption {
+#         font-size:15px;
+#         color:#9AA0A6;
+#     }
+#     .review-box {
+#         padding:16px;
+#         border-radius:10px;
+#         background:#111;
+#         border:1px solid #222;
+#         font-size:20px;
+#     }
+#     </style>
+#     """, unsafe_allow_html=True)
+
+#     # LOAD MODELS
+#     @st.cache_resource
+#     def load_models():
+#         spam_model = joblib.load("spam_logreg_model.pkl")
+#         spam_vectorizer = joblib.load("tfidf_vectorizer_spam.pkl")
+#         sentiment_model = joblib.load("sentiment_lg_model.pkl")
+#         sentiment_vectorizer = joblib.load("tfidf_vectorizer.pkl")
+#         return spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer
+
+#     spam_model, spam_vectorizer, sentiment_model, sentiment_vectorizer = load_models()
+
+#     label_reverse_map = {-1: "Negative", 0: "Neutral", 1: "Positive"}
+
+#     def convert_to_5_scale(score):
+#         return round((score ** 0.6) * 5, 2)
+
+#     def get_spam_label(spam_prob, trust_score):
+#         if spam_prob < 0.4 or trust_score >= 4:
+#             return "✅ Genuine"
+#         elif spam_prob < 0.7 or trust_score > 3.2:
+#             return "🟡 Possibly Genuine"
+#         elif spam_prob < 0.8:
+#             return "⚠️ Suspicious (Review Needed)"
+#         elif spam_prob < 0.9:
+#             return "🚨 Likely Spam"
+#         else:
+#             return "🚨🚨 Very Likely Spam"
+
+#     def sentiment_emoji_and_label(pred_class, percent, neutral_percent):
+#         if pred_class != 0:
+#             diff = percent - neutral_percent
+#             if diff <= 10:
+#                 return "😐", "Neutral", neutral_percent
+#             percent = diff
+
+#         percent = max(0, min(99, percent))
+
+#         if pred_class == 0:
+#             return "😐", "Neutral", percent
+
+#         if pred_class == 1:
+#             if percent >= 96:
+#                 return "🤩", "Extremely Positive", percent
+#             elif percent >= 87:
+#                 return "😄", "Very Positive", percent
+#             elif percent >= 70:
+#                 return "🙂", "Positive", percent
+#             else:
+#                 return "😊", "Slightly Positive", percent
+
+#         if pred_class == -1:
+#             if percent >= 95:
+#                 return "🤬", "Extremely Negative", percent
+#             elif percent >= 85:
+#                 return "😠", "Very Negative", percent
+#             elif percent >= 70:
+#                 return "😞", "Negative", percent
+#             else:
+#                 return "😕", "Slightly Negative", percent
+
+#     def check_rating_sentiment_mismatch(rating, pred_class):
+#         expected = -1 if rating <= 2 else (0 if rating == 3 else 1)
+#         if expected == pred_class:
+#             return "match", "✅ Rating and review are consistent"
+#         if abs(expected - pred_class) == 1:
+#             return "slight", "⚠️ Slight mismatch between rating and review"
+#         return "strong", "🚨 Strong mismatch"
+
+#     def explain_spam(review):
+#         reasons = []
+#         if review.count("!") > 3:
+#             reasons.append("Excessive exclamation marks")
+#         words = review.lower().split()
+#         if len(set(words)) < len(words) * 0.6:
+#             reasons.append("Repetitive words")
+#         if any(w in review.lower() for w in ["buy", "offer", "click"]):
+#             reasons.append("Promotional language")
+#         return reasons
+
+#     if "history" not in st.session_state:
+#         st.session_state.history = []
+
+#     review = st.text_area("Enter review")
+#     rating = st.slider("Rating", 1, 5, 4)
+
+#     if st.button("Analyze"):
+#         tfidf = sentiment_vectorizer.transform([review.lower()])
+#         sent_pred = sentiment_model.predict(tfidf)[0]
+#         sent_prob = sentiment_model.predict_proba(tfidf)[0]
+
+#         percent = int(max(sent_prob) * 100)
+#         neutral_percent = int(sent_prob[0] * 100)
+
+#         emoji, label, adj = sentiment_emoji_and_label(sent_pred, percent, neutral_percent)
+
+#         spam_prob = spam_model.predict_proba(spam_vectorizer.transform([review]))[0][1]
+
+#         raw_trust = (1 - spam_prob)
+#         trust_score = convert_to_5_scale(raw_trust)
+
+#         st.write("### Result")
+#         st.write(label, adj, "%")
+#         st.write("Trust Score:", trust_score)
+
+# # =========================================================
+# # ====================== PAGE 2 =============================
+# # =========================================================
+# elif page == "RAG Review Q&A":
+
+#     st.title("🔍 Review Intelligence (RAG + LLM)")
+
+#     @st.cache_resource
+#     def load_rag():
+#         index = faiss.read_index("faiss_index.bin")
+
+#         with open("texts.pkl", "rb") as f:
+#             texts = pickle.load(f)
+
+#         with open("hotels.pkl", "rb") as f:
+#             hotels = pickle.load(f)
+
+#         embed_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+
+#         tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
+#         model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-small")
+
+#         return index, texts, hotels, embed_model, tokenizer, model
+
+#     index, texts_sample, hotels_sample, embed_model, tokenizer, gen_model = load_rag()
+
+#     def retrieve_reviews(query, hotel_filter=None, k=5):
+#         vec = embed_model.encode([query])
+#         D, I = index.search(vec, k * 10)
+
+#         results = []
+#         for idx in I[0]:
+#             if hotel_filter:
+#                 if hotels_sample[idx] != hotel_filter:
+#                     continue
+#             results.append(texts_sample[idx])
+#             if len(results) >= k:
+#                 break
+#         return results
+
+#     def generate_answer(query, reviews):
+#         context = "\n".join(reviews)
+
+#         prompt = f"""
+# Summarize key issues from these hotel reviews in 2 short sentences.
+
+# Reviews:
+# {context}
+
+# Answer:
+# """
+#         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+#         out = gen_model.generate(**inputs, max_new_tokens=60)
+#         return tokenizer.decode(out[0], skip_special_tokens=True)
+
+#     query = st.text_input("Ask a question")
+#     hotel = st.selectbox("Select Hotel", list(set(hotels_sample)))
+
+#     if st.button("Run RAG"):
+#         retrieved = retrieve_reviews(query, hotel)
+#         answer = generate_answer(query, retrieved)
+
+#         st.subheader("Retrieved Reviews")
+#         for r in retrieved:
+#             st.write("-", r)
+
+#         st.subheader("Answer")
+#         st.write(answer)
+
+# # =========================================================
+# # ====================== PAGE 3 =============================
+# # =========================================================
+# else:
+
+#     st.title("📊 Review Summarization (Coming Soon)")
+
+#     st.info("This page will generate full hotel insights using LLM + RAG.")
+
+#     st.write("""
+# Planned features:
+# - Overall hotel summary
+# - Top complaints
+# - Strengths
+# - Recommendation score
+# """)
+
+
+
+
+
+
+
+    
 
 # import streamlit as st
 # import joblib
