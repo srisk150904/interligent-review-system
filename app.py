@@ -212,8 +212,9 @@ elif page == "RAG Review Q&A":
         context = "\n".join(reviews)
 
         prompt = f"""
-Summarize key issues from these hotel reviews in 2 short sentences.
-
+Summarize key issues from these hotel reviews in 1-2 short sentences.
+Do not repeat the same sentence.
+Ensure proper grammar, punctuations, flow of each sentence is maintained.
 Reviews:
 {context}
 
