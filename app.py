@@ -302,17 +302,18 @@ else:
     
         prompt = f"""
     You are a hotel review analyst.
-    
+    You are analyzing hotel reviews.
     Read the customer reviews below and generate a natural paragraph summary in proper English.
+    Rewrite the information clearly in proper English.
     
     Rules:
-    - Write only one short paragraph
+    - Write only one paragraph
     - Do not use numbering or bullet points
     - Do not list reviews separately
     - Combine common positive and negative opinions
-    - Mention room quality, staff behavior, cleanliness, facilities, and overall experience
-    - Keep the answer concise, clear, and human-like
-    
+    - Mention room quality, staff behavior, cleanliness, facilities, overall experience etc
+    - Keep the answer clear, and human-like
+    Write 3–4 clear, grammatically correct sentences.
     Reviews:
     {context}
     
