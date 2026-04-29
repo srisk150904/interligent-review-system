@@ -292,42 +292,54 @@ else:
     # Generate summary using FLAN-T5
     # -----------------------------
     def generate_summary(reviews):
-        if not reviews:
-            return "No sufficient reviews found for summarization."
+    if not reviews:
+        return "No sufficient reviews found for summarization."
 
-        context = "\n".join(reviews)
+    # Use fewer high-quality reviews for better FLAN-T5 summary quality
+    selected_reviews = reviews[:10]
 
-        prompt = f"""
-Summarize the following hotel reviews in a concise and structured way.
+    context = "\n".join(selected_reviews)
 
-Focus on:
-1. Common positive points
-2. Common complaints
-3. Overall customer experience
+    prompt = f"""
+You are a hotel review analyst.
+
+Read the customer reviews below and generate a natural paragraph summary in proper English.
+
+Rules:
+- Write only one short paragraph
+- Do not use numbering or bullet points
+- Do not list reviews separately
+- Combine common positive and negative opinions
+- Mention room quality, staff behavior, cleanliness, facilities, and overall experience
+- Keep the answer concise, clear, and human-like
 
 Reviews:
 {context}
 
-Summary:
+Final Summary:
 """
 
-        inputs = tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=512
-        )
+    inputs = tokenizer(
+        prompt,
+        return_tensors="pt",
+        truncation=True,
+        max_length=512
+    )
 
-        output = gen_model.generate(
-            **inputs,
-            max_new_tokens=150,
-            no_repeat_ngram_size=3,
-            temperature=0.7
-        )
+    output = gen_model.generate(
+        **inputs,
+        max_new_tokens=120,
+        no_repeat_ngram_size=3,
+        num_beams=4,
+        early_stopping=True
+    )
 
-        summary = tokenizer.decode(output[0], skip_special_tokens=True)
-        return summary
+    summary = tokenizer.decode(
+        output[0],
+        skip_special_tokens=True
+    )
 
+    return summary
     # -----------------------------
     # UI Inputs
     # -----------------------------
